@@ -1,0 +1,202 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings FATAL => qw(all);
+
+use 5.10.0;
+use lib '.'; # Only needed if you've unpacked the Perl mongo driver as a subdir of here
+use MongoDB::_Protocol;
+use MongoDB::_Link;
+use MongoDB::Error;
+
+my $proxy_lport = 27017; # What port do we listen on?
+
+my $proxycfg = "file:proxy.cfg";
+my $proxy; # Holds global proxy state
+
+package MongoProxy;
+use base qw(Net::Server);
+
+main();
+
+###################
+# mongoe
+#
+# Calls private methods of the Perl Mongo driver (1.x)
+# Sorry about that
+#
+# Author: Pat Gunn <pgunn@dachte.org>
+# Copyright MongoDB 2015
+# Apache License
+
+sub process_request
+{
+my ($self) = @_;
+binmode STDIN;
+binmode STDOUT;
+my $pool;
+while(! eof(STDIN))
+	{
+	# Read the 4 int32 fields that are the MsgHeader
+	my ($msglen, $reqid, $respto, $opcode, $request);
+	$request = ""; # Empty. Not sure if this can happen.
+	read(STDIN, $msglen, 4); # Size of messages in bytes, including header!
+	read(STDIN, $reqid , 4);
+	read(STDIN, $respto, 4);
+	read(STDIN, $opcode, 4);
+	my $msglen_decoded = unpack('l', $msglen);
+	my $opcode_decoded = unpack('l', $opcode);
+	print STDERR "Incoming message of length " . $msglen_decoded . "\n";
+	if($msglen_decoded > 16)
+		{read(STDIN, $request, ($msglen_decoded - 16));}
+
+	my($opname, $schema, $table) = parse_schema($opcode, $request);
+	print STDERR "\tOP: $opname ON "
+.		(defined($schema) ? $schema : '_UNKNOWN')
+.		":"
+.		(defined($table) ? $table : '_UNKNOWN')
+.		"\n";
+
+	my $tosend = "$msglen$reqid$respto$opcode$request";
+	print STDERR "SENDING [" . cleaner($tosend) . "]\n";
+	my $conn = ensure_mongo_connection($pool, route_for_destination($schema));
+	$conn->write($tosend);
+	my $resp = $conn->read();
+	print $resp;
+	}
+}
+
+sub cleaner($)
+{
+my ($toclean) = @_;
+$toclean =~ s/[^[:ascii:]]//g;
+return $toclean;
+}
+
+##################
+# Router
+
+sub setup_proxy($)
+{ # Read the proxy config string, setup the global proxy state (hashref) for what schema maps to where
+my ($cfg) = @_;
+my %ret;
+
+my ($mode, $args) = split(':', $cfg, 2);
+if($mode eq 'file')
+	{%ret = load_proxyinfo_from_file($args);}
+else	{die "Unsupported proxy method [$mode]\n";}
+
+return \%ret;
+}
+
+sub load_proxyinfo_from_file($)
+{	# Load a colon-separated file that maps:
+	# SCHEMA:HOST:PORT
+my ($fn) = @_;
+my %ret;
+open(my $fh, $fn) || die "Could not open proxy descriptor file [$fn]:$!\n";
+while(<$fh>)
+	{
+	tr/\n\r\f//d; # Remove newlines and stuff
+	s/#.*//; # Strip comments
+	s/^\s+//;
+	s/\s+$//;
+	next if(/^$/); # Skip blank lines
+	my($schema, $host, $port) = split(':', $_);
+	$ret{$schema}{host} = $host;
+	$ret{$schema}{port} = $port;
+	#print "Learned schema [$schema]\n";
+	}
+close($fh);
+if(! defined($ret{_DEFAULT}))
+	{die "You must define a _DEFAULT schema\n";}
+
+return %ret;
+}
+
+sub route_for_destination($)
+{
+my ($schema) = @_;
+
+my ($host, $port); # Return this
+if(! defined($$proxy{$schema}))
+	{$schema = "_DEFAULT";} # We should always have entries for this
+
+$host = $$proxy{$schema}{host};
+$port = $$proxy{$schema}{port};
+return ($host, $port);
+}
+
+##################
+# Parse a little bit
+
+sub parse_schema($$)
+{ # Give me the (non-decoded) opcode and the req, I give you the opname, schema, table
+my ($opcode, $request) = @_;
+
+my $opcode_d = unpack('l', $opcode);
+if($opcode_d == 2001) # OP_UPDATE
+	{
+	my (undef, $coll) = unpack("lZ*", $request);
+	my ($schema, $table) = split(/\./, $coll);
+	return 'OP_UPDATE', $schema, $table;
+	}
+elsif($opcode_d == 2002) # OP_INSERT
+	{
+	my (undef, $coll) = unpack("lZ*", $request);
+	my ($schema, $table) = split(/\./, $coll);
+	return 'OP_INSERT', $schema, $table;
+	}
+elsif($opcode_d == 2004) # OP_QUERY
+	{
+	my (undef, $coll) = unpack("lZ*", $request);
+	my ($schema, $table) = split(/\./, $coll);
+	return 'OP_QUERY', $schema, $table;
+	}
+elsif($opcode_d == 2005) # OP_GET_MORE
+	{
+	my (undef, $coll) = unpack("lZ*", $request);
+	my ($schema, $table) = split(/\./, $coll);
+	return 'OP_GET_MORE', $schema, $table;
+	}
+elsif($opcode_d == 2006) # OP_DELETE
+	{
+	my (undef, $coll) = unpack("lZ*", $request);
+	my ($schema, $table) = split(/\./, $coll);
+	return 'OP_DELETE', $schema, $table;
+	}
+elsif($opcode_d == 2007) # OP_KILL_CURSORS
+	{
+	return 'OP_KILL_CURSORS', undef, undef;
+	}
+else
+	{
+	return 'OP_UNKNOWN', undef, undef;
+	}
+}
+
+##################
+# Poor man's connection pool
+
+sub ensure_mongo_connection
+{ # Make sure there's a connection to this server. Return that connection.
+my ($pool, $host, $port) = @_;
+
+if(! defined($$pool{"$host$port"})) # TODO OR if the connection is no longer up....
+	{
+	my $conn = MongoDB::_Link->new("$host:$port");
+	$conn->connect();
+	$$pool{"$host$port"} = $conn;
+	}
+return $$pool{"$host$port"};
+}
+
+
+##################
+sub main
+{
+$proxy = setup_proxy($proxycfg);
+MongoProxy->run(port => $proxy_lport);
+
+}
+
