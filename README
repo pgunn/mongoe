@@ -16,3 +16,7 @@ specific to whom you're talking to. Future versions may be less dumb,
 but if you really want this kind of functionality, learn from this code
 and do it better.
 
+Right now this doesn't do at all the right thing with repsets; it acts as
+if standalone mongod processes are all that exist. It eventually should be
+aware of primaries/secondaries, and possibly other kinds of grouping of
+mongo systems that are still being used.

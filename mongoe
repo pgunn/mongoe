@@ -1,21 +1,28 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -w
 
 use strict;
 use warnings FATAL => qw(all);
-
 use 5.10.0;
+
+my $proxy_lport = 27017; # What port do we listen on?
+my $proxycfg = "file:proxy.cfg"; # Right now this is the only cfg method
+
+##
+# Plumbing for the 1.x (not 0.x!) version of the Mongo Perl bindings
 use lib '.'; # Only needed if you've unpacked the Perl mongo driver as a subdir of here
 use MongoDB::_Protocol;
 use MongoDB::_Link;
 use MongoDB::Error;
+##
 
-my $proxy_lport = 27017; # What port do we listen on?
-
-my $proxycfg = "file:proxy.cfg";
 my $proxy; # Holds global proxy state
 
+##
+# Plumbing for Net::Server, which manages connections
+# so I just write a handler for incoming clients
 package MongoProxy;
 use base qw(Net::Server);
+#
 
 main();
 
@@ -30,7 +37,17 @@ main();
 # Apache License
 
 sub process_request
-{
+{	# When you use Net::Server, you provide an entry point for
+	# handling incoming connections, and it spawns a thread per
+	# client, beginning execution at that entry point with STDIN/STDOUT
+	# mapped to the network socket. This is that entry point for
+	# mongoe
+	#
+	# http://docs.mongodb.org/meta-driver/latest/legacy/mongodb-wire-protocol/
+	# Documents the formatting of the messages being passed back and forth.
+	# If you modify this, be meticulous with reading that so you don't create
+	# deadlocks
+
 my ($self) = @_;
 binmode STDIN;
 binmode STDOUT;
@@ -67,7 +84,8 @@ while(! eof(STDIN))
 }
 
 sub cleaner($)
-{
+{	# Wire protocol details include binary data but are still potentially
+	# interesting to log. This cleans them up for display
 my ($toclean) = @_;
 $toclean =~ s/[^[:ascii:]]//g;
 return $toclean;
@@ -77,7 +95,8 @@ return $toclean;
 # Router
 
 sub setup_proxy($)
-{ # Read the proxy config string, setup the global proxy state (hashref) for what schema maps to where
+{	# Read the proxy config string, setup the global proxy state
+	# (hashref) for what schema maps to where
 my ($cfg) = @_;
 my %ret;
 
@@ -115,7 +134,7 @@ return %ret;
 }
 
 sub route_for_destination($)
-{
+{	# Given a schema, return the (host,port) pair it maps to
 my ($schema) = @_;
 
 my ($host, $port); # Return this
@@ -131,7 +150,8 @@ return ($host, $port);
 # Parse a little bit
 
 sub parse_schema($$)
-{ # Give me the (non-decoded) opcode and the req, I give you the opname, schema, table
+{	# Pass in: (non-decoded) opcode, request
+	# Passes back: opname, schema, table
 my ($opcode, $request) = @_;
 
 my $opcode_d = unpack('l', $opcode);
@@ -179,7 +199,8 @@ else
 # Poor man's connection pool
 
 sub ensure_mongo_connection
-{ # Make sure there's a connection to this server. Return that connection.
+{	# Make sure there's a connection to this server.
+	# Return that connection.
 my ($pool, $host, $port) = @_;
 
 if(! defined($$pool{"$host$port"})) # TODO OR if the connection is no longer up....
@@ -194,9 +215,9 @@ return $$pool{"$host$port"};
 
 ##################
 sub main
-{
+{	# When you use Net::Server, your main function is primarily
+	# to prepare you to enter the event loop the module provides
 $proxy = setup_proxy($proxycfg);
 MongoProxy->run(port => $proxy_lport);
-
 }
 
