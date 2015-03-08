@@ -1,15 +1,17 @@
 mongoe - An endpoint service
 
 Purpose:
-You have many mongo databases, you have lots of code that needs to talk to those databases,
-but you don't want the code to need to know where those databases are. Rather than updating
-all the code when an endpoint changes, make a bunch of "mongoe" systems that act as endpoints,
-and point your code at those; they will send your data to the correct mongod transparently.
-If you move your data, just reconfigure your mongo endpoints.
+You have many mongo databases, you have lots of code that needs to talk to those
+databases, but you don't want the code to need to know where those databases
+are. Rather than updating all the code when an endpoint changes, make a bunch
+of "mongoe" systems that act as endpoints, and point your code at those; they
+will send your data to the correct mongod transparently. If you move your data,
+just reconfigure your mongo endpoints.
 
 Status:
-This is largely a proof-of-concept. It doesn't do adequate error checking, and it doesn't
-handle version differences between servers intelligently or prevent you from doing operations
-that are by-protocol designed to be specific to whom you're talking to. Future versions may be
-less dumb, but if you really want this kind of functionality, learn how I did this and do it better.
+This is a proof-of-concept. It doesn't do adequate error checking, and it doesn't
+handle version differences between servers intelligently or prevent you from
+doing operations that are by-protocol designed to be specific to whom you're
+talking to. Future versions may be less dumb, but if you really want this kind
+of functionality, learn from this code and do it better.
 
