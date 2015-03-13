@@ -5,7 +5,7 @@ use warnings FATAL => qw(all);
 use 5.10.0;
 
 my $proxy_lport = 27017; # What port do we listen on?
-my $proxycfg = "file:proxy.cfg"; # Right now this is the only cfg method
+my $proxycfg = "file:mongoe.cfg"; # Right now this is the only cfg method
 
 ##
 # Plumbing for the 1.x (not 0.x!) version of the Mongo Perl bindings
