@@ -1,2 +1,6 @@
 You need the 1.x version of the Perl driver. Earlier versions won't work.
 
+If your system does not come with it, you can grab it (or the
+components mongoe uses) here:
+
+https://github.com/mongodb/mongo-perl-driver/tree/master/lib/MongoDB
