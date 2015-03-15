@@ -193,13 +193,13 @@ elsif($opcode_d == 2002) # OP_INSERT
 	}
 elsif($opcode_d == 2004) # OP_QUERY
 	{
-	my (undef, $coll, undef, undef, $doclen) = unpack("lZ*lll", $request, ''); # Flags, collection, skip, return, the rest
+	my (undef, $coll, undef, undef, $doclen, $qdoc) = unpack("lZ*lllA*", $request); # Flags, collection, skip, return, the rest
 	my ($schema, $table) = split(/\./, $coll);
-	my $qdoc2 = $request;
+	my $qdoc2 = $qdoc;
 	$qdoc2 =~ s/[^A-Za-z]/_/g;
-	print STDERR "BSON parse [$qdoc2] of stated length $doclen string length " . length($request) . "\n";
-	print STDERR decode_bson($doclen . $request);
-	@$opinfo{'opname','schema','table'} = ('OP_QUERY', $schema, $table, ));
+	print STDERR "BSON parse [$qdoc2] of stated length $doclen string length " . length($qdoc) . "\n";
+	print STDERR BSON::decode($doclen . $qdoc);
+	@$opinfo{'opname','schema','table'} = ('OP_QUERY', $schema, $table);
 	}
 elsif($opcode_d == 2005) # OP_GET_MORE
 	{
