@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 
 use strict;
+use BSON;
 use warnings FATAL => qw(all);
 use 5.10.0;
 
@@ -192,9 +193,13 @@ elsif($opcode_d == 2002) # OP_INSERT
 	}
 elsif($opcode_d == 2004) # OP_QUERY
 	{
-	my (undef, $coll) = unpack("lZ*", $request);
+	my (undef, $coll, undef, undef, $doclen) = unpack("lZ*lll", $request, ''); # Flags, collection, skip, return, the rest
 	my ($schema, $table) = split(/\./, $coll);
-	@$opinfo{'opname','schema','table'} = ('OP_QUERY', $schema, $table);
+	my $qdoc2 = $request;
+	$qdoc2 =~ s/[^A-Za-z]/_/g;
+	print STDERR "BSON parse [$qdoc2] of stated length $doclen string length " . length($request) . "\n";
+	print STDERR decode_bson($doclen . $request);
+	@$opinfo{'opname','schema','table'} = ('OP_QUERY', $schema, $table, ));
 	}
 elsif($opcode_d == 2005) # OP_GET_MORE
 	{
