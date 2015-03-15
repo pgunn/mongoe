@@ -176,6 +176,7 @@ return %ret;
 sub parse_op($$$)
 {	# Pass in: (non-decoded) opcode, request
 	# Passes back: opname, schema, table
+	# TODO: opcode is part of opinfo. Refactor arg passing
 my ($opcode, $request, $opinfo) = @_;
 
 my $opcode_d = unpack('l', $opcode);
@@ -197,8 +198,8 @@ elsif($opcode_d == 2004) # OP_QUERY
 	my ($schema, $table) = split(/\./, $coll);
 	my $qdoc2 = $qdoc;
 	$qdoc2 =~ s/[^A-Za-z]/_/g;
-	print STDERR "BSON parse [$qdoc2] of stated length $doclen string length " . length($qdoc) . "\n";
-	print STDERR BSON::decode($doclen . $qdoc);
+	print STDERR "BSON doc [$qdoc2] of stated length $doclen string length " . length($doclen . $qdoc) . "\n";
+	#print STDERR BSON::decode($doclen . $qdoc, ixhash => 1);
 	@$opinfo{'opname','schema','table'} = ('OP_QUERY', $schema, $table);
 	}
 elsif($opcode_d == 2005) # OP_GET_MORE
