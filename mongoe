@@ -59,18 +59,12 @@ while(! eof($client))
 	my $request;
 	$request = ""; # Empty. Not sure if this can happen.
 	my %req = read_message($client);
-	print STDERR "Incoming message of length " . $req{msglen_decoded} . "\n";
-
-	print STDERR "\tOP: " . $req{opname} . " ON "
-.		(defined($req{schema}) ? $req{schema} : '_UNKNOWN')
-.		":"
-.		(defined($req{table}) ? $req{table} : '_UNKNOWN')
-.		"\n";
-
-	print STDERR "SENDING [" . cleaner($req{raw}) . "]\n";
+	print STDERR info_message(%req);
 	my $conn = ensure_mongo_connection($pool, route_for_destination($req{schema}));
 	$conn->write($req{raw});
-	my $resp = $conn->read();
+	if(! $conn->remote_connected() )
+		{print STDERR "Warning: mongod for $req{schema} has disconnected\n";}
+	my $resp = $conn->read(); # TODO I need to add a handler for NetworkError events.
 	print $resp;
 	}
 }
@@ -79,7 +73,8 @@ sub cleaner($)
 {	# Wire protocol details include binary data but are still potentially
 	# interesting to log. This cleans them up for display
 my ($toclean) = @_;
-$toclean =~ s/[^[:ascii:]]//g;
+$toclean =~ s/[^[:ascii:]]/\?/g;
+$toclean =~ tr/\n\f\r/\?/d;
 return $toclean;
 }
 
@@ -141,6 +136,19 @@ return ($host, $port);
 ##################
 # Wire Protocol and BSON stuff
 
+sub info_message(%)
+{	# TODO When we can decode BSON better, we can make this much, much nicer.
+	#	We may eventually pull all this stuff into an object interface, which
+	#	would make the code cleaner too.
+my %msg = @_;
+my $ret = '';
+$ret .= "Message(" . $msg{msglen_decoded} . "): " . $msg{opname} . "(" . $msg{opcode_decoded} . ")\n";
+$ret .= "\tSchema: " . (defined($msg{schema}) ? $msg{schema} : 'UNKNOWN') . "\n";
+$ret .= "\tTable: " . (defined($msg{table}) ? $msg{table} : 'UNKNOWN') . "\n";
+$ret .= "\t[" . cleaner($msg{raw}) . "]\n";
+return $ret;
+}
+
 sub read_message($)
 {
 my ($fh) = @_;
@@ -150,7 +158,7 @@ read($fh, $ret{msglen}, 4); # Size of messages in bytes, including header!
 read($fh, $ret{reqid} , 4);
 read($fh, $ret{respto}, 4);
 read($fh, $ret{opcode}, 4);
-$ret{raw} = join('', $ret{msglen}, $ret{reqid}, $ret{respto}, $ret{opcode}); # FIXME slice syntax
+$ret{raw} = join('', @ret{"msglen", "reqid", "respto", "opcode"});
 $ret{msglen_decoded} = unpack('l', $ret{msglen});
 $ret{opcode_decoded} = unpack('l', $ret{opcode});
 my $content;
@@ -158,55 +166,55 @@ my $content;
 if($ret{msglen_decoded} > 16)
 	{read($fh, $content, ($ret{msglen_decoded} - 16));}
 
-@ret{"opname","schema","table"} = parse_schema($ret{opcode}, $content);
+parse_op($ret{opcode}, $content, \%ret);
 
 $ret{raw} .= $content;
 return %ret;
 }
 
-sub parse_schema($$)
+sub parse_op($$$)
 {	# Pass in: (non-decoded) opcode, request
 	# Passes back: opname, schema, table
-my ($opcode, $request) = @_;
+my ($opcode, $request, $opinfo) = @_;
 
 my $opcode_d = unpack('l', $opcode);
 if($opcode_d == 2001) # OP_UPDATE
 	{
 	my (undef, $coll) = unpack("lZ*", $request);
 	my ($schema, $table) = split(/\./, $coll);
-	return 'OP_UPDATE', $schema, $table;
+	@$opinfo{'opname','schema','table'} = ('OP_UPDATE', $schema, $table);
 	}
 elsif($opcode_d == 2002) # OP_INSERT
 	{
 	my (undef, $coll) = unpack("lZ*", $request);
 	my ($schema, $table) = split(/\./, $coll);
-	return 'OP_INSERT', $schema, $table;
+	@$opinfo{'opname','schema','table'} = ('OP_INSERT', $schema, $table);
 	}
 elsif($opcode_d == 2004) # OP_QUERY
 	{
 	my (undef, $coll) = unpack("lZ*", $request);
 	my ($schema, $table) = split(/\./, $coll);
-	return 'OP_QUERY', $schema, $table;
+	@$opinfo{'opname','schema','table'} = ('OP_QUERY', $schema, $table);
 	}
 elsif($opcode_d == 2005) # OP_GET_MORE
 	{
 	my (undef, $coll) = unpack("lZ*", $request);
 	my ($schema, $table) = split(/\./, $coll);
-	return 'OP_GET_MORE', $schema, $table;
+	@$opinfo{'opname','schema','table'} = ('OP_GET_MORE', $schema, $table);
 	}
 elsif($opcode_d == 2006) # OP_DELETE
 	{
 	my (undef, $coll) = unpack("lZ*", $request);
 	my ($schema, $table) = split(/\./, $coll);
-	return 'OP_DELETE', $schema, $table;
+	@$opinfo{'opname','schema','table'} = ('OP_DELETE', $schema, $table);
 	}
 elsif($opcode_d == 2007) # OP_KILL_CURSORS
 	{
-	return 'OP_KILL_CURSORS', undef, undef;
+	@$opinfo{'opname','schema','table'} = ('OP_KILL_CURSORS', undef, undef);
 	}
 else
 	{
-	return 'OP_UNKNOWN', undef, undef;
+	@$opinfo{'opname','schema','table'} = ('OP_UNKNOWN', undef, undef);
 	}
 }
 
