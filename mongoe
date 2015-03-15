@@ -56,29 +56,20 @@ my $pool;
 while(! eof($client))
 	{
 	# Read the 4 int32 fields that are the MsgHeader
-	my ($msglen, $reqid, $respto, $opcode, $request);
+	my $request;
 	$request = ""; # Empty. Not sure if this can happen.
-	read($client, $msglen, 4); # Size of messages in bytes, including header!
-	read($client, $reqid , 4);
-	read($client, $respto, 4);
-	read($client, $opcode, 4);
-	my $msglen_decoded = unpack('l', $msglen);
-	my $opcode_decoded = unpack('l', $opcode);
-	print STDERR "Incoming message of length " . $msglen_decoded . "\n";
-	if($msglen_decoded > 16)
-		{read($client, $request, ($msglen_decoded - 16));}
+	my %req = read_message($client);
+	print STDERR "Incoming message of length " . $req{msglen_decoded} . "\n";
 
-	my($opname, $schema, $table) = parse_schema($opcode, $request);
-	print STDERR "\tOP: $opname ON "
-.		(defined($schema) ? $schema : '_UNKNOWN')
+	print STDERR "\tOP: " . $req{opname} . " ON "
+.		(defined($req{schema}) ? $req{schema} : '_UNKNOWN')
 .		":"
-.		(defined($table) ? $table : '_UNKNOWN')
+.		(defined($req{table}) ? $req{table} : '_UNKNOWN')
 .		"\n";
 
-	my $tosend = "$msglen$reqid$respto$opcode$request";
-	print STDERR "SENDING [" . cleaner($tosend) . "]\n";
-	my $conn = ensure_mongo_connection($pool, route_for_destination($schema));
-	$conn->write($tosend);
+	print STDERR "SENDING [" . cleaner($req{raw}) . "]\n";
+	my $conn = ensure_mongo_connection($pool, route_for_destination($req{schema}));
+	$conn->write($req{raw});
 	my $resp = $conn->read();
 	print $resp;
 	}
@@ -150,7 +141,7 @@ return ($host, $port);
 ##################
 # Wire Protocol and BSON stuff
 
-sub read_message_header($)
+sub read_message($)
 {
 my ($fh) = @_;
 
@@ -162,6 +153,14 @@ read($fh, $ret{opcode}, 4);
 $ret{raw} = join('', $ret{msglen}, $ret{reqid}, $ret{respto}, $ret{opcode}); # FIXME slice syntax
 $ret{msglen_decoded} = unpack('l', $ret{msglen});
 $ret{opcode_decoded} = unpack('l', $ret{opcode});
+my $content;
+
+if($ret{msglen_decoded} > 16)
+	{read($fh, $content, ($ret{msglen_decoded} - 16));}
+
+@ret{"opname","schema","table"} = parse_schema($ret{opcode}, $content);
+
+$ret{raw} .= $content;
 return %ret;
 }
 
