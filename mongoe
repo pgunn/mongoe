@@ -75,6 +75,7 @@ sub cleaner($)
 	# interesting to log. This cleans them up for display
 my ($toclean) = @_;
 $toclean =~ s/[^[:ascii:]]/\?/g;
+$toclean =~ s/[^[:print:]]/\?/g;
 $toclean =~ tr/\n\f\r/\?/d;
 return $toclean;
 }
@@ -201,8 +202,9 @@ elsif($opcode_d == 2004) # OP_QUERY
 	my ($schema, $table) = split(/\./, $coll);
 	my $qdoc2 = $qdoc;
 	$qdoc2 =~ s/[^\[\]:A-Za-z]/_/g;
-	print STDERR "BSON doc [$qdoc2] of stated length $doclen string length " . length($qdoc) . "\n";
-	print STDERR BSON::decode($qdoc, ixhash => 1);
+	#print STDERR "BSON doc [$qdoc2] of stated length $doclen string length " . length($qdoc) . "\n";
+	my $bson_r = BSON::decode($qdoc, ixhash => 1);
+	print STDERR "\tBSON Keys: " . join(' ', keys %$bson_r) . "\n";
 	@$opinfo{'opname','schema','table'} = ('OP_QUERY', $schema, $table);
 	}
 elsif($opcode_d == 2005) # OP_GET_MORE
