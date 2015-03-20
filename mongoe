@@ -190,26 +190,28 @@ my ($opcode, $request, $opinfo) = @_;
 my $opcode_d = unpack('l', $opcode);
 if($opcode_d == 2001) # OP_UPDATE
 	{
-	my (undef, $coll) = unpack("lZ*", $request);
+	my (undef, $coll) = unpack("lZ*", $request); # ZERO, collection, flags, selectorDocument, updateDocument
+	my $selectordoc = substr($request, 9+length($coll)); # 2L + strlen + null-termination
+		# TODO The selectordoc starts with an int32 that's its (packed) length.
+		# We should substr once (no-replace) to pull the updatedocument out,
+		# then substr again (with replace) to trim the selectordoc down to its desired parts.
 	my ($schema, $table) = split(/\./, $coll);
 	@$opinfo{'opname','schema','table'} = ('OP_UPDATE', $schema, $table);
 	}
 elsif($opcode_d == 2002) # OP_INSERT
 	{
-	my (undef, $coll) = unpack("lZ*", $request);
+	my (undef, $coll) = unpack("lZ*", $request); # Flags, collection, documents
+	my $qdoc = substr($request, 5+length($coll)); # 1L + strlen + null-termination
+	
 	my ($schema, $table) = split(/\./, $coll);
-	@$opinfo{'opname','schema','table'} = ('OP_INSERT', $schema, $table);
+	@$opinfo{'opname','schema','table', 'bson'} = ('OP_INSERT', $schema, $table, BSON::decode($qdoc, ixhash=>1) );
 	}
 elsif($opcode_d == 2004) # OP_QUERY
 	{
 	my (undef, $coll) = unpack("lZ*", $request); # Flags, collection, skip, return, the rest
 	my $qdoc = substr($request, 13+length($coll)); # 3L + strlen + null-termination
-	my $doclen = unpack('l', $qdoc);
 
 	my ($schema, $table) = split(/\./, $coll);
-	my $qdoc2 = $qdoc;
-	$qdoc2 =~ s/[^\[\]:A-Za-z]/_/g;
-	#print STDERR "BSON doc [$qdoc2] of stated length $doclen string length " . length($qdoc) . "\n";
 	@$opinfo{'opname','schema','table', 'bson'} = ('OP_QUERY', $schema, $table, BSON::decode($qdoc, ixhash=>1) );
 	}
 elsif($opcode_d == 2005) # OP_GET_MORE
@@ -221,8 +223,9 @@ elsif($opcode_d == 2005) # OP_GET_MORE
 elsif($opcode_d == 2006) # OP_DELETE
 	{
 	my (undef, $coll) = unpack("lZ*", $request);
+	my $qdoc = substr($request, 9+length($coll)); # 2L + strlen + null-termination
 	my ($schema, $table) = split(/\./, $coll);
-	@$opinfo{'opname','schema','table'} = ('OP_DELETE', $schema, $table);
+	@$opinfo{'opname','schema','table', 'bson'} = ('OP_DELETE', $schema, $table, BSON::decode($qdoc, ixhash=>1) );
 	}
 elsif($opcode_d == 2007) # OP_KILL_CURSORS
 	{
