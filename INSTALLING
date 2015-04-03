@@ -4,3 +4,8 @@ If your system does not come with it, you can grab it (or the
 components mongoe uses) here:
 
 https://github.com/mongodb/mongo-perl-driver/tree/master/lib/MongoDB
+
+The lazyscrape.pl utility will attempt to do this for you, but it's fragile
+and may easily break due to changes upstream. Eventually a more robust way
+to manage these dependencies will be added (or the dependencies will be
+changed)
