@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 
 use strict;
-use BSON;
+use BSON 0.12;
 use warnings FATAL => qw(all);
 use 5.10.0;
 
@@ -24,6 +24,7 @@ my $proxy; # Holds global proxy state
 package MongoProxy;
 use base qw(Net::Server);
 use Data::Dumper;
+$Data::Dumper::Indent=3;
 #
 
 main();
@@ -67,6 +68,9 @@ while(! eof($client))
 	if(! $conn->remote_connected() )
 		{print STDERR "Warning: mongod for $req{schema} has disconnected\n";}
 	my $resp = $conn->read(); # TODO I need to add a handler for NetworkError events.
+	my %respinfo = parse_reply($resp); # Already been read in, parse it
+	print STDERR info_message(%respinfo);
+	# TODO do something with %respinfo
 	print $resp;
 	}
 }
@@ -139,6 +143,26 @@ return ($host, $port);
 ##################
 # Wire Protocol and BSON stuff
 
+sub bson_docset_to_docarray($$)
+{	# Given BSON data that can contain multiple documents, and a specifier
+	# how many how many documents should be in there, return an array of
+	# those documents.
+my ($data, $numdocs) = @_;
+my @ret;
+while($numdocs > 0)
+	{
+	open(my $dfh, "<", \$data) || die "Failed to disassemble data: $!\n";
+	read($dfh, my $msglen, 4) || die "Misparse in data disassembly: not enough documents found\n";
+	close($dfh);
+	my $msglen_decoded = unpack('l', $msglen);
+	my $thisdoc = substr($data, 0, $msglen_decoded, ''); # Destructive substr
+	push(@ret, $thisdoc);
+	$numdocs--;
+	}
+if(length($data) > 0) {warn "Misparse in data disassembly: too many documents found\n";}
+return @ret;
+}
+
 sub info_message(%)
 {	# TODO When we can decode BSON better, we can make this much, much nicer.
 	#	We may eventually pull all this stuff into an object interface, which
@@ -154,8 +178,18 @@ if(defined $msg{bson})
 	$ret .= Dumper($msg{bson}) . "\n";
 	$ret .= "--------END DUMPER--------\n";
 	}
-$ret .= "\t[" . cleaner($msg{raw}) . "]\n";
+#$ret .= "\t[" . cleaner($msg{raw}) . "]\n";
 return $ret;
+}
+
+sub parse_reply($)
+{	# parse the reply sent by a backend server
+my ($resp) = @_;
+
+open(my $rfh, "<", \$resp) || die "Failed to open response: $!\n";
+my %ret = read_message($rfh);
+close($rfh);
+return %ret;
 }
 
 sub read_message($)
@@ -230,6 +264,20 @@ elsif($opcode_d == 2006) # OP_DELETE
 elsif($opcode_d == 2007) # OP_KILL_CURSORS
 	{
 	@$opinfo{'opname','schema','table'} = ('OP_KILL_CURSORS', undef, undef);
+	}
+elsif($opcode_d == 1) # OP_REPLY
+	{
+	my(undef, $cursorid, $startfrom, $numret) = unpack("lqll", $request); # first field is response flags
+	my $qdoc = substr($request, 20); # 5L
+	@$opinfo{'opname', 'schema', 'table', 'bson'} = ('OP_REPLY', undef, undef, 
+								\(
+									map
+										{
+										BSON::decode($_, ixhash=>1)
+										}
+								bson_docset_to_docarray($qdoc, $numret)
+								));
+	#@$opinfo{'opname', 'schema', 'table'} = ('OP_REPLY', undef, undef); # First try with no BSON decode
 	}
 else
 	{
