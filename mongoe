@@ -143,23 +143,26 @@ return ($host, $port);
 ##################
 # Wire Protocol and BSON stuff
 
-sub bson_docset_to_docarray($$)
+sub bson_docset_to_docarray($;$)
 {	# Given BSON data that can contain multiple documents, and a specifier
 	# how many how many documents should be in there, return an array of
 	# those documents.
 my ($data, $numdocs) = @_;
 my @ret;
-while($numdocs > 0)
+while(length($data))
 	{
 	open(my $dfh, "<", \$data) || die "Failed to disassemble data: $!\n";
-	read($dfh, my $msglen, 4) || die "Misparse in data disassembly: not enough documents found\n";
+	read($dfh, my $msglen, 4) || die "Misparse in data disassembly: Partial document read\n";
 	close($dfh);
 	my $msglen_decoded = unpack('l', $msglen);
 	my $thisdoc = substr($data, 0, $msglen_decoded, ''); # Destructive substr
 	push(@ret, $thisdoc);
-	$numdocs--;
+	if(defined $numdocs)
+		{$numdocs--;}
 	}
-if(length($data) > 0) {warn "Misparse in data disassembly: too many documents found\n";}
+if( (defined $numdocs) && ($numdocs != 0))
+	{die "Protocol error in unpacking BSON docset\n";}
+print STDERR "PARSED: I saw " . scalar(@ret) . " DOCUMENTS\n";
 return @ret;
 }
 
@@ -236,9 +239,13 @@ elsif($opcode_d == 2002) # OP_INSERT
 	{
 	my (undef, $coll) = unpack("lZ*", $request); # Flags, collection, documents
 	my $qdoc = substr($request, 5+length($coll)); # 1L + strlen + null-termination
+	my @dec_docset = map
+				{
+				BSON::decode($_, ixhash=>1)
+				} bson_docset_to_docarray($qdoc);
 	
 	my ($schema, $table) = split(/\./, $coll);
-	@$opinfo{'opname','schema','table', 'bson'} = ('OP_INSERT', $schema, $table, BSON::decode($qdoc, ixhash=>1) );
+	@$opinfo{'opname','schema','table', 'bson'} = ('OP_INSERT', $schema, $table, \@dec_docset );
 	}
 elsif($opcode_d == 2004) # OP_QUERY
 	{
@@ -269,14 +276,13 @@ elsif($opcode_d == 1) # OP_REPLY
 	{
 	my(undef, $cursorid, $startfrom, $numret) = unpack("lqll", $request); # first field is response flags
 	my $qdoc = substr($request, 20); # 5L
+	my @dec_docset = map
+				{
+				BSON::decode($_, ixhash=>1)
+				} bson_docset_to_docarray($qdoc, $numret);
 	@$opinfo{'opname', 'schema', 'table', 'bson'} = ('OP_REPLY', undef, undef, 
-								\(
-									map
-										{
-										BSON::decode($_, ixhash=>1)
-										}
-								bson_docset_to_docarray($qdoc, $numret)
-								));
+								\@dec_docset
+								);
 	#@$opinfo{'opname', 'schema', 'table'} = ('OP_REPLY', undef, undef); # First try with no BSON decode
 	}
 else
