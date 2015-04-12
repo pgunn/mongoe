@@ -1,0 +1,62 @@
+Endpoint Shape Compression
+
+Pat Gunn
+
+ESC is a protocol feature intended to reduce bandwidth use in performing inserts in MongoDB.
+Initially intended to be implemented in a future version of mongoe, the feature will be negotiated
+between two mongoe processes on either side of the link (although there's no reason a driver
+or a mongod/mongos could not have the feature), and when enabled on both sides, they will speak
+an alternative to BSON for OP_INSERT operations that is significantly smaller.
+
+If the feature is succesfully enabled, rather than using OP_INSERT (opcode 2002), a client will
+negotiate four additional opcodes with the server, which we will call OP_INSERT_Q,
+OP_INSERT_R, OP_INSERT_S, and OP_QSHAPE. OP_INSERT will still be available for clients that wish to use it,
+with unchanged semantics.
+
+The format and meaning of these is as follows:
+
+-------------
+OP_INSERT_Q (op insert query) has an identical structure to OP_INSERT, but a different opcode.
+It is used when the client does not have the current document shape in its shape cache.
+Unlike an OP_INSERT, an OP_INSERT_Q gets a response; it receives an OP_INSERT_R
+
+
+-------------
+OP_INSERT_R (op insert response) has the following format:
+
+struct OP_INSERT_R {
+	MsgHeader header; // standard message header
+	int64 reserved;
+	int32 shapeId;
+}
+
+A shapeid is only guaranteed to the client to be valid for the duration and within the scope of
+a connection; servers are permitted but not required to have broader scopes, and clients must not
+depend on broader scopes; they are required to use OP_INSERT_Q to get a valid shapeId.
+
+------------
+OP_INSERT_S (op insert shaped) has the same shape as an OP_INSERT, except instead of a document, it
+takes an esdoc:
+
+struct OP_INSERT_S {
+	MsgHeader header;
+	int32 flags;
+	cstring fullCollectionName;
+	esdoc* documents;
+}
+
+An ESDoc is a packed format with the shape information removed; it is shaped as follows:
+
+esdocument ::= int32 int32 BYTES "\x00"    	# The first int32 is the number of bytes in the esdoc,
+						# the second is a shapeId
+
+The structure within BYTES is exactly the same as the BSON spec, except with all the
+tagging and e_names removed, leaving only the payload. For fields that lack a payload,
+their presence is simply recorded in the shape and they do not need to be transmitted.
+
+----------
+The OP_QSHAPE (op query shape) is intended to populate a cache without otherwise performing
+data operations. It has the same sematics as OP_INSERT_Q (including expected response), but
+the server must extract the shape and not perform any DML.
+
+
