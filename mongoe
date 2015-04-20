@@ -66,14 +66,28 @@ while(! eof($client))
 		{			# handle it specially
 		my $cmd = extract_admin_cmd(\%req);
 		print STDERR "ADMIN command [$cmd]\n";
-		my $conn = ensure_mongo_connection($pool, route_for_destination($req{schema}));
-		$conn->write($req{raw});
-		if(! $conn->remote_connected() )
-			{print STDERR "Warning: mongod for $req{schema} has disconnected\n";}
-		my $resp = $conn->read(); # TODO I need to add a handler for NetworkError events.
-		my %respinfo = parse_reply($resp); # Already been read in, parse it
-		print STDERR info_message(%respinfo);
-		print $resp;
+		if(cmd_forbidden($cmd))
+			{	# "db.shutdownserver()"
+			my $resp = bson_i_refuse($req{reqid_decoded});
+			my %respinfo = parse_reply($resp);
+			print STDERR info_message(%respinfo);
+			print $resp;
+			}
+		elsif(cmd_unify($cmd))
+			{	# "show dbs"
+
+			}
+		else # For now passthrough anything not forbidden
+			{
+			my $conn = ensure_mongo_connection($pool, route_for_destination($req{schema})); # Will be _DEFAULT until we figure out something better
+			$conn->write($req{raw});
+			if(! $conn->remote_connected() )
+				{print STDERR "Warning: mongod for $req{schema} has disconnected\n";}
+			my $resp = $conn->read(); # TODO I need to add a handler for NetworkError events.
+			my %respinfo = parse_reply($resp); # Already been read in, parse it
+			print STDERR info_message(%respinfo);
+			print $resp;
+			}
 		}
 	# TODO Need handler for other requests that don't target a schema
 	else # Standard command, just pass it along based on target schema
@@ -190,6 +204,8 @@ my $ret = '';
 $ret .= "Message(" . $msg{msglen_decoded} . "): " . $msg{opname} . "(" . $msg{opcode_decoded} . ")\n";
 if(defined $msg{schema}) {$ret .= "\tSchema: $msg{schema}\n";}
 if(defined $msg{table}) {$ret .= "\tTable: $msg{table}\n";}
+if(defined $msg{reqid_decoded}) {$ret .= "\tRequest has ID " . $msg{reqid_decoded} . "\n";}
+if(defined $msg{respto_decoded}) {$ret .= "\tRequest is to ID " . $msg{respto_decoded} . "\n";}
 if(defined $msg{bson})
 	{
 	$ret .= "--------BEGIN DUMPER--------\n";
@@ -222,6 +238,8 @@ read($fh, $ret{opcode}, 4);
 $ret{raw} = join('', @ret{"msglen", "reqid", "respto", "opcode"});
 $ret{msglen_decoded} = unpack('l', $ret{msglen});
 $ret{opcode_decoded} = unpack('l', $ret{opcode});
+$ret{reqid_decoded} = unpack('l', $ret{reqid});
+$ret{respto_decoded} = unpack('l', $ret{respto});
 my $content;
 
 if($ret{msglen_decoded} > 16)
@@ -328,6 +346,46 @@ return (keys(%$hr))[0];		# Review Tie::IxHash for how this works;
 				# most commands in JSON look like the
 				# commandname mapped to a value we don't
 				# care about
+}
+
+sub cmd_forbidden($)
+{	# XXX Probably need a longer list
+my ($cmd) = @_;
+if($cmd eq 'shutdown') {return 1;}
+return 0;
+}
+
+sub cmd_unify($)
+{
+return 0;
+# TODO
+}
+
+##################
+# Speak BSON
+
+sub bson_i_refuse
+{	# Generate an OP_REPLY with a payload amounting to refusing an operation
+my ($reqid) = @_; # Need this to generate a valid response
+	# Header:
+	#	int32 messageLength
+	#	int32 requestID
+	#	int32 $reqid
+	#	int32 OP_REPLY
+	# Body:
+	#	int32 respFlags (bit 1 set to 1 = QueryFailure)
+	#	int64 cursorID = 0
+	#	int32 startingFrom = 0
+	#	int32 numberReturned = 1
+	#	document =
+	#		BSON::encode(
+	#			errmsg => "Forbidden",
+	#			ok => 0
+	#			)
+my $payload = BSON::encode({errmsg  => 'Forbidden', 'ok' => 0});
+my $mlength = length($payload) + 36; # 28 from the int32 + 8 from the int64
+my $ret = pack('lllllqll', $mlength, int( rand( 2**31 - 1 ) ), $reqid, 1, 1, 0, 0, 1) . $payload;
+return $ret;
 }
 
 ##################
