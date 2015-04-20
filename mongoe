@@ -189,7 +189,7 @@ my %msg = @_;
 my $ret = '';
 $ret .= "Message(" . $msg{msglen_decoded} . "): " . $msg{opname} . "(" . $msg{opcode_decoded} . ")\n";
 if(defined $msg{schema}) {$ret .= "\tSchema: $msg{schema}\n";}
-if(defined $msg{table}) {$ret .= "\tSchema: $msg{table}\n";}
+if(defined $msg{table}) {$ret .= "\tTable: $msg{table}\n";}
 if(defined $msg{bson})
 	{
 	$ret .= "--------BEGIN DUMPER--------\n";
