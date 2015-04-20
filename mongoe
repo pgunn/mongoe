@@ -36,7 +36,6 @@ main();
 # Sorry about that
 #
 # Author: Pat Gunn <pgunn@dachte.org>
-# Copyright MongoDB 2015
 # Apache License
 
 sub process_request
@@ -63,15 +62,31 @@ while(! eof($client))
 	$request = ""; # Empty. Not sure if this can happen.
 	my %req = read_message($client);
 	print STDERR info_message(%req);
-	my $conn = ensure_mongo_connection($pool, route_for_destination($req{schema}));
-	$conn->write($req{raw});
-	if(! $conn->remote_connected() )
-		{print STDERR "Warning: mongod for $req{schema} has disconnected\n";}
-	my $resp = $conn->read(); # TODO I need to add a handler for NetworkError events.
-	my %respinfo = parse_reply($resp); # Already been read in, parse it
-	print STDERR info_message(%respinfo);
-	# TODO do something with %respinfo
-	print $resp;
+	if(command_admin(\%req))	# If it targets the admin schema, we probably need to 
+		{			# handle it specially
+		my $cmd = extract_admin_cmd(\%req);
+		print STDERR "ADMIN command [$cmd]\n";
+		my $conn = ensure_mongo_connection($pool, route_for_destination($req{schema}));
+		$conn->write($req{raw});
+		if(! $conn->remote_connected() )
+			{print STDERR "Warning: mongod for $req{schema} has disconnected\n";}
+		my $resp = $conn->read(); # TODO I need to add a handler for NetworkError events.
+		my %respinfo = parse_reply($resp); # Already been read in, parse it
+		print STDERR info_message(%respinfo);
+		print $resp;
+		}
+	# TODO Need handler for other requests that don't target a schema
+	else # Standard command, just pass it along based on target schema
+		{
+		my $conn = ensure_mongo_connection($pool, route_for_destination($req{schema}));
+		$conn->write($req{raw});
+		if(! $conn->remote_connected() )
+			{print STDERR "Warning: mongod for $req{schema} has disconnected\n";}
+		my $resp = $conn->read(); # TODO I need to add a handler for NetworkError events.
+		my %respinfo = parse_reply($resp); # Already been read in, parse it
+		print STDERR info_message(%respinfo);
+		print $resp;
+		}
 	}
 }
 
@@ -162,7 +177,7 @@ while(length($data))
 	}
 if( (defined $numdocs) && ($numdocs != 0))
 	{die "Protocol error in unpacking BSON docset\n";}
-print STDERR "PARSED: I saw " . scalar(@ret) . " DOCUMENTS\n";
+#print STDERR "PARSED: I saw " . scalar(@ret) . " DOCUMENTS\n";
 return @ret;
 }
 
@@ -173,8 +188,8 @@ sub info_message(%)
 my %msg = @_;
 my $ret = '';
 $ret .= "Message(" . $msg{msglen_decoded} . "): " . $msg{opname} . "(" . $msg{opcode_decoded} . ")\n";
-$ret .= "\tSchema: " . (defined($msg{schema}) ? $msg{schema} : 'UNKNOWN') . "\n";
-$ret .= "\tTable: " . (defined($msg{table}) ? $msg{table} : 'UNKNOWN') . "\n";
+if(defined $msg{schema}) {$ret .= "\tSchema: $msg{schema}\n";}
+if(defined $msg{table}) {$ret .= "\tSchema: $msg{table}\n";}
 if(defined $msg{bson})
 	{
 	$ret .= "--------BEGIN DUMPER--------\n";
@@ -252,8 +267,10 @@ elsif($opcode_d == 2004) # OP_QUERY
 	my (undef, $coll) = unpack("lZ*", $request); # Flags, collection, skip, return, the rest
 	my $qdoc = substr($request, 13+length($coll)); # 3L + strlen + null-termination
 
+	my @doc = (BSON::decode($qdoc, ixhash=>1));
+
 	my ($schema, $table) = split(/\./, $coll);
-	@$opinfo{'opname','schema','table', 'bson'} = ('OP_QUERY', $schema, $table, BSON::decode($qdoc, ixhash=>1) );
+	@$opinfo{'opname','schema','table', 'bson'} = ('OP_QUERY', $schema, $table, \@doc);
 	}
 elsif($opcode_d == 2005) # OP_GET_MORE
 	{
@@ -265,12 +282,13 @@ elsif($opcode_d == 2006) # OP_DELETE
 	{
 	my (undef, $coll) = unpack("lZ*", $request);
 	my $qdoc = substr($request, 9+length($coll)); # 2L + strlen + null-termination
+	my @doc = (BSON::decode($qdoc, ixhash=>1));
 	my ($schema, $table) = split(/\./, $coll);
-	@$opinfo{'opname','schema','table', 'bson'} = ('OP_DELETE', $schema, $table, BSON::decode($qdoc, ixhash=>1) );
+	@$opinfo{'opname','schema','table', 'bson'} = ('OP_DELETE', $schema, $table, \@doc );
 	}
 elsif($opcode_d == 2007) # OP_KILL_CURSORS
 	{
-	@$opinfo{'opname','schema','table'} = ('OP_KILL_CURSORS', undef, undef);
+	@$opinfo{'opname'} = ('OP_KILL_CURSORS');
 	}
 elsif($opcode_d == 1) # OP_REPLY
 	{
@@ -280,15 +298,36 @@ elsif($opcode_d == 1) # OP_REPLY
 				{
 				BSON::decode($_, ixhash=>1)
 				} bson_docset_to_docarray($qdoc, $numret);
-	@$opinfo{'opname', 'schema', 'table', 'bson'} = ('OP_REPLY', undef, undef, 
+	@$opinfo{'opname', 'bson'} = ('OP_REPLY', 
 								\@dec_docset
 								);
-	#@$opinfo{'opname', 'schema', 'table'} = ('OP_REPLY', undef, undef); # First try with no BSON decode
+	#@$opinfo{'opname'} = ('OP_REPLY'); # First try with no BSON decode
 	}
 else
 	{
-	@$opinfo{'opname','schema','table'} = ('OP_UNKNOWN', undef, undef);
+	@$opinfo{'opname'} = ('OP_UNKNOWN');
 	}
+}
+
+sub command_admin
+{
+my ($req_r) = @_;
+
+if((defined $$req_r{schema}) && ($$req_r{schema} eq 'admin'))
+	{return 1;}
+else	{return 0;}
+}
+
+sub extract_admin_cmd
+{
+my ($req_r) = @_;
+
+my @bsonlist = @{$$req_r{bson}};
+my $hr = $bsonlist[0];
+return (keys(%$hr))[0];		# Review Tie::IxHash for how this works; 
+				# most commands in JSON look like the
+				# commandname mapped to a value we don't
+				# care about
 }
 
 ##################
