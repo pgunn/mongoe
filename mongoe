@@ -367,24 +367,27 @@ return 0;
 sub bson_i_refuse
 {	# Generate an OP_REPLY with a payload amounting to refusing an operation
 my ($reqid) = @_; # Need this to generate a valid response
-	# Header:
-	#	int32 messageLength
-	#	int32 requestID
-	#	int32 $reqid
-	#	int32 OP_REPLY
-	# Body:
-	#	int32 respFlags (bit 1 set to 1 = QueryFailure)
-	#	int64 cursorID = 0
-	#	int32 startingFrom = 0
-	#	int32 numberReturned = 1
 	#	document =
 	#		BSON::encode(
 	#			errmsg => "Forbidden",
 	#			ok => 0
 	#			)
 my $payload = BSON::encode({errmsg  => 'Forbidden', 'ok' => 0});
+my $respflags=0;
+vec($respflags, 1,1) = 1; # QueryFailure is true
+
 my $mlength = length($payload) + 36; # 28 from the int32 + 8 from the int64
-my $ret = pack('lllllqll', $mlength, int( rand( 2**31 - 1 ) ), $reqid, 1, 1, 0, 0, 1) . $payload;
+my $ret = pack('lllllqll', 		# Header:
+		$mlength,			# int32 requestID
+		int( rand( 2**31 - 1 ) ),	# int32 requestID
+		$reqid,				# int32 "what we're replying to"
+		1,				# OP_REPLY
+						# --- Begin Body ---
+		$respflags,			# int32 responseFlags, bits 0+1 high
+		0,				# int64 CursorID
+		0,				# int32 startingFrom
+		1)				# int32 numReturned
+.		$payload;
 return $ret;
 }
 
