@@ -64,7 +64,7 @@ while(! eof($client))
 	print STDERR info_message(%req);
 	if(command_admin(\%req))	# If it targets the admin schema, we probably need to 
 		{			# handle it specially
-		my $cmd = extract_admin_cmd(\%req);
+		my $cmd = extract_admin_cmd(\%req) // 'EMPTY';
 		print STDERR "ADMIN command [$cmd]\n";
 		if(cmd_forbidden($cmd))
 			{	# "db.shutdownserver()"
