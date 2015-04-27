@@ -73,8 +73,12 @@ while(! eof($client))
 			print STDERR info_message(%respinfo);
 			print $resp;
 			}
-		elsif(cmd_unify($cmd))
+		elsif($cmd eq 'listDatabases')
 			{	# "show dbs"
+				# Foreach backend:
+				#	result = issue a listDatabases 
+				#	filter result by mongoe routing config
+				# Unify those into a larger JSON structure
 
 			}
 		else # For now passthrough anything not forbidden
@@ -355,12 +359,6 @@ my ($cmd) = @_;
 my @forbidden = qw/shutdown replSetGetStatus replSetFreeze replSetInitiate replSetMaintenance replSetReconfig replSetStepDown replSetSyncFrom resync replSetGetConfig flushRouterComnfig addShard cleanupOrphaned checkShardingIndex enableSharding listShards removeShard getShardMap getShardVersion mergeChunks setShardVersion shardCollection shardingSTate unsetSharding split splitChunk splitVector medianKey moveChunk movePrimary isdbgrid logRotate/;
 if(grep{$cmd eq $_} @forbidden) {return 1;}
 return 0;
-}
-
-sub cmd_unify($)
-{
-return 0;
-# TODO
 }
 
 ##################
