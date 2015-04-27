@@ -351,7 +351,9 @@ return (keys(%$hr))[0];		# Review Tie::IxHash for how this works;
 sub cmd_forbidden($)
 {	# XXX Probably need a longer list
 my ($cmd) = @_;
-if($cmd eq 'shutdown') {return 1;}
+
+my @forbidden = qw/shutdown replSetGetStatus replSetFreeze replSetInitiate replSetMaintenance replSetReconfig replSetStepDown replSetSyncFrom resync replSetGetConfig flushRouterComnfig addShard cleanupOrphaned checkShardingIndex enableSharding listShards removeShard getShardMap getShardVersion mergeChunks setShardVersion shardCollection shardingSTate unsetSharding split splitChunk splitVector medianKey moveChunk movePrimary isdbgrid logRotate/;
+if(grep{$cmd eq $_} @forbidden) {return 1;}
 return 0;
 }
 
