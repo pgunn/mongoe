@@ -79,7 +79,21 @@ while(! eof($client))
 				#	result = issue a listDatabases 
 				#	filter result by mongoe routing config
 				# Unify those into a larger JSON structure
-
+			my %routes = get_router_iterable();
+			foreach my $host (keys %routes)
+				{
+				foreach my $port (keys %{$routes{$host}})
+					{
+					my @ep_schemot = @{$routes{$host}{$port}};
+					#my $conn = ensure_mongo_connection($pool, $host, $port);
+					#$conn->write($req{raw});
+					#if(! $conn->remote_connected() )
+					#	{ How do I handle this?! }
+					#my $resp = $conn->read();
+					#TODO Pull apart the reply, parse it, stash it, DO NOT pass it back to client
+					}
+				}
+			# TODO Build a final reply out of all stashed responses, pass back to client
 			}
 		else # For now passthrough anything not forbidden
 			{
@@ -171,6 +185,23 @@ if(! defined($$proxy{$schema}))
 $host = $$proxy{$schema}{host};
 $port = $$proxy{$schema}{port};
 return ($host, $port);
+}
+
+sub get_router_iterable
+{	# Packages the entire routing config up into a single data structure
+	# for something to walk it efficiently by endpoint rather than by schema served.
+	# Returns a multidimensional hash with ip and port as the 2 keys, and the value
+	# being a reference to a list of the schemas served by the endpoint. 
+	# TODO: Evaluate Key-value with URL as key, value still as listref or maybe CSV
+my %ret;
+my @schemot = keys %$proxy;
+foreach my $schema (@schemot)
+	{
+	my $host = $$proxy{$schema}{host};
+	my $port = $$proxy{$schema}{port};
+	push(@{$ret{$host}{$port}}, $schema);
+	}
+return %ret;
 }
 
 ##################
