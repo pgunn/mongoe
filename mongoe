@@ -81,20 +81,25 @@ while(! eof($client))
 				# Unify those into a larger JSON structure
 				# TODO Refactor this
 			my %routes = get_router_iterable();
-			my %master_schemot;
+			my %master_schemot; # We populate this with config-exposed schemas
 			foreach my $host (keys %routes)
 				{
 				foreach my $port (keys %{$routes{$host}})
 					{
+					print STDERR "Thinking about host [$host] port [$port]\n";
 					my @ep_schemot = @{$routes{$host}{$port}};
 					my $conn = ensure_mongo_connection($pool, $host, $port);
 					$conn->write($req{raw});
 					if(! $conn->remote_connected() )
 						{ print STDERR "Warning: mongod for host [$host]:[$port] has disconnected\n";}
 					my $resp = $conn->read();
+					my %resp_decoded = parse_reply($resp);
+					print STDERR "Got here\n";
 					#TODO Pull apart the reply, parse it, stash it, DO NOT pass it back to client
-					my %sch_info = extract_schema_info_from_response($resp);
-					if(! grep{$_ eq '_DEFAULT'} @ep_schemot)
+					my %sch_info = extract_schema_info_from_response(\%resp_decoded);
+					print STDERR "I see " . join(',', keys %sch_info) . "\n";
+					print STDERR info_message(%resp_decoded); # Hope this isn't confusing
+					if(! (grep{$_ eq '_DEFAULT'} @ep_schemot))
 						{
 						foreach my $schema (@ep_schemot) # Only copy info if it's in a schema exposed by our config
 							{
@@ -411,7 +416,16 @@ sub extract_schema_info_from_response
 {	# Return a hash with database names as the key, value is
 	# something extract_schema_info_from_response() can use.
 my ($req_r) = @_;
-# TODO
+my %ret;
+my @bsonlist = @{$$req_r{bson}};
+my $rep_r = $bsonlist[0];
+my @dbs = @{$$rep_r{databases}};
+foreach my $db (@dbs)
+	{
+	$ret{$$db{name}}{sizeOnDisk} = $$db{sizeOnDisk};
+	$ret{$$db{name}}{empty} = $$db{empty};
+	}
+return %ret;
 }
 
 sub cmd_forbidden($)
@@ -458,6 +472,9 @@ sub bson_response_listDatabases
 my %dbinfo = @_;
 my $ret;
 # TODO
+print STDERR "Pre\n";
+print STDERR Dumper(\%dbinfo);
+die;
 return $ret;
 }
 
