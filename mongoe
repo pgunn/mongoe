@@ -81,7 +81,7 @@ while(! eof($client))
 				# Unify those into a larger JSON structure
 				# TODO Refactor this
 			my %master_schemot = build_filtered_schemalist($req{raw}, $pool);
-			my $cli_resp = bson_response_listDatabases(%master_schemot);
+			my $cli_resp = bson_response_listDatabases($req{reqid_decoded}, %master_schemot);
 			# TODO Decode and print too
 			print $cli_resp;
 			}
@@ -385,6 +385,7 @@ foreach my $db (@dbs)
 	{
 	$ret{$$db{name}}{sizeOnDisk} = $$db{sizeOnDisk};
 	$ret{$$db{name}}{empty} = $$db{empty};
+	$ret{$$db{name}}{name} = $$db{name};
 	}
 return %ret;
 }
@@ -469,7 +470,7 @@ my $ret = pack('lllllqll', 		# Header:
 		$reqid,				# int32 "what we're replying to"
 		1,				# OP_REPLY
 						# --- Begin Body ---
-		$respflags,			# int32 responseFlags, bits 0+1 high
+		$respflags,			# int32 responseFlags, bit 1 high
 		0,				# int64 CursorID
 		0,				# int32 startingFrom
 		1)				# int32 numReturned
@@ -479,13 +480,38 @@ return $ret;
 
 sub bson_response_listDatabases
 {	# Generate an OP_REPLY with a payload that's a valid response to listDatabases
-my %dbinfo = @_;
-my $ret;
-# TODO
+my ($reqid, %dbinfo) = @_;
 print STDERR "Pre\n";
 print STDERR Dumper(\%dbinfo);
-die;
+my $totalsize = schinfo_totalsize(%dbinfo);
+my @databases = values(%dbinfo);
+my $payload = BSON::encode({'ok' => 1, databases => \@databases, totalSize => $totalsize});
+my $mlength = length($payload) + 36; # 28 from the int32, 8 from the int64
+
+my $ret = pack('lllllqll', 		# Header:
+		$mlength,			# int32 requestID
+		int( rand( 2**31 - 1 ) ),	# int32 requestID
+		$reqid,				# int32 "what we're replying to"
+		1,				# OP_REPLY
+						# --- Begin Body ---
+		0,				# int32 responseFlags, all bits low
+		0,				# int64 CursorID
+		0,				# int32 startingFrom
+		1)				# int32 numReturned
+.		$payload;
+
 return $ret;
+}
+
+sub schinfo_totalsize
+{
+my %schemot = @_;
+my $size = 0;
+foreach my $schema (keys %schemot)
+	{
+	$size += $schemot{$schema}{sizeOnDisk};
+	}
+return $size;
 }
 
 ##################
