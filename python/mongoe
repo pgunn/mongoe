@@ -1,14 +1,110 @@
 #!/usr/bin/env python
 
 import SocketServer
-class MyTCPHandler(SocketServer.StreamRequestHandler):
 
-	def handle(self):
+proxy_lport = 27017 # What port do we listen on?
+
+class MyTCPHandler(SocketServer.StreamRequestHandler):
+	def process_request(self):
+		cleaner("hi")
 		pass
+	def handle(self):
+		self.process_request()
+#########
+# mongoe
+#
+# Author: Pat Gunn <pgunn@dachte.org>
+# Apache License
+
+def cleaner(toclean):
+	# Wire protocol details include binary data but are still potentially
+	# interesting to log. This cleans them up for display
+	pass
+
+###############
+# Router
+def setup_proxy(cfgspec):
+	# Read the proxy config string, setup the global proxy state
+	# returns associative array for what schema maps to where
+	pass
+def load_proxyinfo_from_file(fn):
+	# Load a colon-separated file that maps:
+	# SCHEMA:HOST:PORT
+	pass
+def route_for_destination(schema):
+	# Given a schema, return the (host,port) pair it maps to
+	pass
+def get_router_iterable():
+	# Packages the entire routing config up into a single data structure
+	# for something to walk it efficiently by endpoint rather than by schema served.
+	# returns a 2-key a-a with ip and port as the 2 keys, and the value
+	# being a reference to a list of the schemas served by the endpoint.
+	pass
+
+###############
+# Wire Protocol and BSON stuff
+
+def bson_document_to_docarray(data, numdocs=0):
+	# Given BSON data that can contain multiple documents, and an optional specifier
+	# of how many docs should be in there, return an array of those docs.
+	pass
+def info_message(msg):
+	# Return a string describing in detail the message passed in
+	pass
+def parse_reply(resp):
+	# Parse reply sent by a backend server
+	pass
+def read_message(fh):
+	pass
+def parse_op(opcode, request, opinfo):
+	# Pass in: (non-decoded) opcode, request
+	# Returns: opname, schema, table
+	pass
+def command_admin(req):
+	# True if this is a request to the admin schema, else False
+	pass
+def extract_admin_cmd(req):
+	pass
+
+def extract_schema_info_from_response(req):
+	# Return an a-a with schema names as key, value is something
+	# extract_schema_info_from_response() can use
+	pass
+
+def build_filtered_schemalist(listreq, pool):
+	# Reach out to backend databases, build data structure with info on schemas
+	# that exist on them that we can reach w/ our current config, suitable for building
+	# a response to the listDatabases command
+	pass
+
+def cmd_forbidden(cmd):
+	pass
+
+##############
+# Speak BSON
+
+def bson_i_refuse(reqid):
+	# Generate an OP_REPLY with a payload amounting to refusing an operation
+	pass
+
+def bson_response_listDatabases(reqid,dbinfo):
+	# Generrate an OP_REPLY with a payload that's a valid response to listDatabases
+	pass
+
+def schinfo_totalsize(schemot):
+	pass
+
+##############
+# Poor man's connection pool
+
+def ensure_mongo_connection(pool, host, port):
+	# Make sure there's a connection to this server
+	# Return that connection.
+	pass
 
 if __name__ == "__main__":
 	HOST, PORT = "localhost", 27017 # TODO Read from configfile
-
 	server = SocketServer.TCPServer((HOST, PORT), MyTCPHandler)
 	server.serve_forever()
+
 

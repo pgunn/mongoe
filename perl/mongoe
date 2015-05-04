@@ -278,7 +278,7 @@ return %ret;
 
 sub parse_op($$$)
 {	# Pass in: (non-decoded) opcode, request
-	# Passes back: opname, schema, table
+	# Returns: opname, schema, table
 	# TODO: opcode is part of opinfo. Refactor arg passing
 my ($opcode, $request, $opinfo) = @_;
 
@@ -374,7 +374,7 @@ return (keys(%$hr))[0];		# Review Tie::IxHash for how this works;
 }
 
 sub extract_schema_info_from_response
-{	# Return a hash with database names as the key, value is
+{	# Return a hash with schema names as the key, value is
 	# something extract_schema_info_from_response() can use.
 my ($req_r) = @_;
 my %ret;
