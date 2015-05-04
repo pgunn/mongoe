@@ -9,15 +9,20 @@ endpoints, and point your code at those; they will send your data to
 the correct mongod transparently. If you move your data, just
 reconfigure your mongo endpoints.
 
-Status:
-This is a proof-of-concept. It doesn't do adequate error checking, and
-it doesn't handle version differences between servers intelligently or
-prevent you from doing operations that are by-protocol designed to be
-specific to whom you're talking to. Future versions may be less dumb,
-but if you really want this kind of functionality, learn from this
-code and do it better.
+Language Status:
+This is a multi-language project.
+*Perl - Will always be the primary language
+*Python - Mostly stubs, does not yet function
+*C - Not yet started
+*(other languages) - Not yet started
 
-Right now this doesn't do at all the right thing with repsets; it
-acts as if standalone mongod processes are all that exist. It 
-eventually should be aware of primaries/secondaries, and possibly
-other kinds of grouping of mongo systems that are still being used.
+As the code matures and the right abstractions become apparent, I
+will split libraries out of the codebase suitable for other projects,
+also in every language the program is ported to.
+
+Code status:
+Fairly immature - do not use in production, has severe bugs and limitations.
+Doesn't do adequate error checking, doesn't understand different versions
+of the wire protocol. Assumes its endpoints are standalone mongod processes.
+If you find problems, please report them as Github issues (be specific).
+
