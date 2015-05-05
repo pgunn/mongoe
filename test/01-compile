@@ -1,0 +1,15 @@
+#!/bin/bash
+
+echo "Testing Perl"
+perl -c perl/mongoe
+if [ $? -ne 0 ]; then
+	echo "Perl tests failed"
+fi
+echo "Testing Python"
+python -m py_compile python/mongoe
+if [ $? -ne 0 ];
+	then
+	echo "Python tests failed"
+	else
+	echo "Python tests ok"
+fi
