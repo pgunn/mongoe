@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 
 from __future__ import print_function
+from struct import *
 
+import pprint
+import StringIO
 import string
 import SocketServer
 import sys
@@ -25,6 +28,7 @@ class MyTCPHandler(SocketServer.StreamRequestHandler):
 def cleaner(toclean):
 	# Wire protocol details include binary data but are still potentially
 	# interesting to log. This cleans them up for display
+	# XXX Presently we don't use this, so let's not bother porting it
 	pass
 
 ###############
@@ -90,21 +94,80 @@ def get_router_iterable():
 ###############
 # Wire Protocol and BSON stuff
 
-def bson_document_to_docarray(data, numdocs=0):
+def bson_docset_to_docarray(data, numdocs=0):
 	# Given BSON data that can contain multiple documents, and an optional specifier
 	# of how many docs should be in there, return an array of those docs.
-	pass
+	ret = ()
+	datf = StringIO.StringIO(data)
+	while true:
+		msglen = datf.read(4)
+		if msglen == '':
+			break
+		msglen_decoded = unpack('l', msglen)
+		thisdoc = datf.read(msglen_decoded)
+		ret.append(thisdoc)
+		if numdocs != 0:
+			numdocs -= 1
+	datf.close()
+	if numdocs != 0:
+		raise Exception('Protocol error in unpacking BSON docset')
+	return ret
+
 def info_message(msg):
-	# Return a string describing in detail the message passed in
-	pass
+	ret = ''
+	ret += 'Message(' + msg['msglen_decoded'] + '): ' + msg['opname'] + '(' + msg['opcode_decoded'] + ")\n"
+	if 'schema' in msg:
+		ret += "\tSchema: " + msg['schema'] + "\n"
+	if 'table' in msg:
+		ret += "\tTable: " + msg['table'] + "\n"
+	if 'reqid_decoded' in msg:
+		ret += "\tRequest has ID " + msg['reqid_decoded'] + "\n"
+	if 'respto_decoded' in msg:
+		ret += "\tRequest is to ID " + msg['respto_decoded'] + "\n"
+	if 'bson' in msg:
+		ret += "--------BEGIN DUMPER--------\n";
+		ret += pprint.pformat(msg['bson']) + "\n";
+		ret += "--------END DUMPER--------\n";
+	return ret
+
 def parse_reply(resp):
 	# Parse reply sent by a backend server
-	pass
+	rfh = StringIO.StringIO(resp)
+	ret = read_message(rfh)
+	rfh.close()
+	return ret
+
 def read_message(fh):
-	pass
+	ret = {}
+	ret['msglen'] = fh.read(4)
+	ret['reqid']  = fh.read(4)
+	ret['respto'] = fh.read(4)
+	ret['opcode'] = fh.read(4)
+	ret['raw'] = ''.join(ret['msglen'], ret['reqid'], ret['respto'], ret['opcode'])
+	ret['msglen_decoded'] = unpack('l', ret['msglen'])
+	ret['opcode_decoded'] = unpack('l', ret['opcode'])
+	ret['reqid_decoded']  = unpack('l', ret['reqid'])
+	ret['respto_decoded'] = unpack('l', ret['respto'])
+	content = ''
+	if ret['msglen_decoded'] > 16:
+		content = fh.read(ret['msglen_decoded'] - 16)
+	parse_op(ret['opcode'], content, ret) # dictionaries are passed by reference!
+	ret['raw'] += content
+	return ret
+
 def parse_op(opcode, request, opinfo):
 	# Pass in: (non-decoded) opcode, request
 	# Returns: opname, schema, table
+	opinfo = {}
+	opcode_d = unpack('l', opcode)
+	if opcode_d == 2001: # OP_UPDATE
+		selectordoc = request[calcsize('l')+9+len(request):] # 9 = 2L + strlen + null term
+		(schema, table) = request[calcsize('l'):].split('.', 2)
+		opinfo['opname'], opinfo['schema'], opinfo['table'] = 'OP_UPDATE', schema, table
+	elif opcode_d == 2002: # OP_INSERT
+		qdoc = request[calcsize('l')+5+len(request):] # 5 = 1L + strlen + null-termination
+		# TODO Python's map/lambda stuff is too different - rethink this
+	
 	pass
 
 def command_admin(req):
