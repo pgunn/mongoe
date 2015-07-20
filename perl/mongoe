@@ -5,6 +5,7 @@ use BSON 0.12;
 use warnings FATAL => qw(all);
 use 5.10.0;
 
+my $mongoe_version = "1.0";
 my $proxy_lport = 27017; # What port do we listen on?
 my $proxycfg = "file:mongoe.cfg"; # Right now this is the only cfg method
 
@@ -101,14 +102,26 @@ while(! eof($client))
 	# TODO Need handler for other requests that don't target a schema
 	else # Standard command, just pass it along based on target schema
 		{
-		my $conn = ensure_mongo_connection($pool, route_for_destination($req{schema}));
-		$conn->write($req{raw});
-		if(! $conn->remote_connected() )
-			{print STDERR "Warning: mongod for $req{schema} has disconnected\n";}
-		my $resp = $conn->read(); # TODO I need to add a handler for NetworkError events.
-		my %respinfo = parse_reply($resp); # Already been read in, parse it
-		print STDERR info_message(%respinfo);
-		print $resp;
+		if(request_negotiates_protocol(\%req))
+			{
+			my @mockup_features = qw/BASE_MONGOE/;
+			my $proto_signature = generate_protocol_response($req{reqid_decoded}, \@mockup_features); # FIXME Eventually this should negotiate features on a per-schema basis
+			my %respinfo = parse_reply($proto_signature);
+			print STDERR info_message(%respinfo);
+			# FIXME Should we decode and display this too?
+			print $proto_signature;
+			}
+		else
+			{
+			my $conn = ensure_mongo_connection($pool, route_for_destination($req{schema}));
+			$conn->write($req{raw});
+			if(! $conn->remote_connected() )
+				{print STDERR "Warning: mongod for $req{schema} has disconnected\n";}
+			my $resp = $conn->read(); # TODO I need to add a handler for NetworkError events.
+			my %respinfo = parse_reply($resp); # Already been read in, parse it
+			print STDERR info_message(%respinfo);
+			print $resp;
+			}
 		}
 	}
 }
@@ -483,6 +496,29 @@ if(defined $forbidden{$cmd})
 return 0;
 }
 
+sub request_negotiates_protocol
+{
+my ($req_r) = @_;
+if(defined($$req_r{table}) && ($$req_r{table} eq '$cmd'))
+	{
+	my @bsonlist = @{$$req_r{bson}};
+	if(@bsonlist != 1)
+		{return 0;}
+
+	my $query = $bsonlist[0];
+	if(keys %$query < 1)
+		{return 0;}
+	if(defined($$query{isMaster}) && ($$query{isMaster}==1))
+		{
+		return 1;
+		#print STDERR "rnp_dump data dump: " . Dumper($query) . "\n";
+		}
+	}
+return 0;
+}
+
+
+
 ##################
 # Speak BSON
 
@@ -501,7 +537,7 @@ vec($respflags, 1,1) = 1; # QueryFailure is true
 my $mlength = length($payload) + 36; # 28 from the int32 + 8 from the int64
 my $ret = pack('lllllqll', 		# Header:
 		$mlength,			# int32 requestID
-		int( rand( 2**31 - 1 ) ),	# int32 requestID
+		int( rand( 2**31 - 1 ) ),	# int32 requestID FIXME Comment incorrect. Code probably ok.
 		$reqid,				# int32 "what we're replying to"
 		1,				# OP_REPLY
 						# --- Begin Body ---
@@ -512,6 +548,43 @@ my $ret = pack('lllllqll', 		# Header:
 .		$payload;
 return $ret;
 }
+
+sub generate_protocol_response
+{
+my ($reqid, $feature_r) = @_;
+
+my $bson_true = BSON::Bool->true;
+my $bson_now = BSON::Time->new;
+my $payload = BSON::encode(	{
+				'ismaster' => $bson_true,
+				'maxBsonObjectSize' => 16777216,
+				'maxMessageSizeBytes' => 48000000,
+				'maxWriteBatchSize' => 1000,
+				'localTime' => $bson_now,
+				'maxWireVersion' => 3,
+				'minWireVersion' => 0,
+				'mongoeVersion'  => $mongoe_version,
+				'mongoeFeatures' => $feature_r,
+				'ok' => 1
+				});
+my $mlength = length($payload) + 36; # 28 from the int32, 8 from the int64
+
+my $ret = pack('lllllqll', 		# Header:
+		$mlength,			# int32 requestID
+		int( rand( 2**31 - 1 ) ),	# int32 requestID FIXME comment incorrect
+		$reqid,				# int32 "what we're replying to"
+		1,				# OP_REPLY
+						# --- Begin Body ---
+		0,				# int32 responseFlags, all bits low
+		0,				# int64 CursorID
+		0,				# int32 startingFrom
+		1)				# int32 numReturned
+.		$payload;
+
+return $ret;
+
+}
+
 
 sub bson_response_listDatabases
 {	# Generate an OP_REPLY with a payload that's a valid response to listDatabases
@@ -525,7 +598,7 @@ my $mlength = length($payload) + 36; # 28 from the int32, 8 from the int64
 
 my $ret = pack('lllllqll', 		# Header:
 		$mlength,			# int32 requestID
-		int( rand( 2**31 - 1 ) ),	# int32 requestID
+		int( rand( 2**31 - 1 ) ),	# int32 requestID FIXME comment is incorrect. Code probably fine.
 		$reqid,				# int32 "what we're replying to"
 		1,				# OP_REPLY
 						# --- Begin Body ---
