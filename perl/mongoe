@@ -443,8 +443,42 @@ sub cmd_forbidden($)
 {	# XXX Probably need a longer list
 my ($cmd) = @_;
 
-my @forbidden = qw/shutdown replSetGetStatus replSetFreeze replSetInitiate replSetMaintenance replSetReconfig replSetStepDown replSetSyncFrom resync replSetGetConfig flushRouterComnfig addShard cleanupOrphaned checkShardingIndex enableSharding listShards removeShard getShardMap getShardVersion mergeChunks setShardVersion shardCollection shardingSTate unsetSharding split splitChunk splitVector medianKey moveChunk movePrimary isdbgrid logRotate/;
-if(grep{$cmd eq $_} @forbidden) {return 1;}
+my %forbidden = 	(
+			'shutdown'		=> 1,
+			'replSetGetStatus'	=> 1,
+			'replSetFreeze'		=> 1,
+			'replSetInitiate'	=> 1,
+			'replSetMaintenance'	=> 1,
+			'replSetReconfig'	=> 1,
+			'replSetStepDown'	=> 1,
+			'replSetSyncFrom'	=> 1,
+			'resync'		=> 1,
+			'replSetGetConfig'	=> 1,
+			'flushRouterConfig'	=> 1,
+			'addShard'		=> 1,
+			'cleanupOrphaned'	=> 1,
+			'checkShardingIndex'	=> 1,
+			'enableSharding'	=> 1,
+			'listShards'		=> 1,
+			'removeShard'		=> 1,
+			'getShardMap'		=> 1,
+			'getShardVersion'	=> 1,
+			'mergeChunks'		=> 1,
+			'setShardVersion'	=> 1,
+			'shardCollection'	=> 1,
+			'shardingState'		=> 1,
+			'unsetSharding'		=> 1,
+			'split'			=> 1,
+			'splitChunk'		=> 1,
+			'splitVector'		=> 1,
+			'medianKey'		=> 1,
+			'moveChunk'		=> 1,
+			'movePrimary'		=> 1,
+			'isdbgrid'		=> 1,
+			'logRotate'		=> 1
+			);
+if(defined $forbidden{$cmd})
+	{return 1;}
 return 0;
 }
 
