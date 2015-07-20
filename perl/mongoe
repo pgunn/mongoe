@@ -62,7 +62,7 @@ while(! eof($client))
 	$request = ""; # Empty. Not sure if this can happen.
 	my %req = read_message($client);
 	print STDERR info_message(%req);
-	if(command_admin(\%req))	# If it targets the admin schema, we probably need to 
+	if(cmd_admin(\%req))	# If it targets the admin schema, we probably need to 
 		{			# handle it specially
 		my $cmd = extract_admin_cmd(\%req) // 'EMPTY';
 		print STDERR "ADMIN command [$cmd]\n";
@@ -352,7 +352,7 @@ else
 	}
 }
 
-sub command_admin
+sub cmd_admin
 {
 my ($req_r) = @_;
 
@@ -493,8 +493,8 @@ my ($reqid) = @_; # Need this to generate a valid response
 	#			errmsg => "Forbidden",
 	#			ok => 0
 	#			)
-my $payload = BSON::encode({errmsg  => 'Forbidden', 'ok' => 0});
-my $respflags=0;
+my $payload = BSON::encode({'$err' => "Forbidden"});
+my $respflags = 0;
 vec($respflags, 1,1) = 1; # QueryFailure is true
 
 my $mlength = length($payload) + 36; # 28 from the int32 + 8 from the int64
