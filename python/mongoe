@@ -64,13 +64,28 @@ def load_proxyinfo_from_file(fn):
 
 def route_for_destination(schema):
 	# Given a schema, return the (host,port) pair it maps to
-	pass
+	if not schema in proxy:
+		schema = "_DEFAULT" # We should always have entries for this
+	host = proxy[schema]['host']
+	port = proxt[schema]['port']
+	return host, port
+
 def get_router_iterable():
 	# Packages the entire routing config up into a single data structure
 	# for something to walk it efficiently by endpoint rather than by schema served.
 	# returns a 2-key a-a with ip and port as the 2 keys, and the value
 	# being a reference to a list of the schemas served by the endpoint.
-	pass
+	ret = ()
+	schemot = proxy.keys()
+	for schema in schemot:
+		host = proxy[schema]['host']
+		port = proxy[schema]['port']
+		if not host in ret:
+			ret[host] = {}
+		if not port in ret[host]:
+			ret[host][port] = ()
+		ret[host][port].append(schema)
+	return ret
 
 ###############
 # Wire Protocol and BSON stuff
