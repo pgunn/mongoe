@@ -8,6 +8,7 @@ import sys
 import re
 
 proxy_lport = 27017 # What port do we listen on?
+proxycfg = "file:mongoe.cfg" # Right now this is the only cfg method
 
 class MyTCPHandler(SocketServer.StreamRequestHandler):
 	def process_request(self):
@@ -51,6 +52,8 @@ def load_proxyinfo_from_file(fn):
 		if(re.match('^$', line)):
 			continue # Skip blank lines
 		(schema, host, port) = string.split(line, ':', 3)
+		ret = {}
+		ret[schema] = {}
 		ret[schema]['host'] = host
 		ret[schema]['port'] = port
 	fh.close()
@@ -132,7 +135,7 @@ def ensure_mongo_connection(pool, host, port):
 
 if __name__ == "__main__":
 	global proxy
-	proxy = setup_proxy(proxyconfig)
+	proxy = setup_proxy(proxycfg)
 	server = SocketServer.TCPServer(('localhost', proxy_lport), MyTCPHandler)
 	server.serve_forever()
 
