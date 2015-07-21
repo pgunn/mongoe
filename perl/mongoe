@@ -11,10 +11,11 @@ my $proxycfg = "file:mongoe.cfg"; # Right now this is the only cfg method
 
 ##
 # Plumbing for the 1.x (not 0.x!) version of the Mongo Perl bindings
-use lib '.'; # Only needed if you've unpacked the Perl mongo driver as a subdir of here
+use lib ('.', 'perl/lib'); # Only needed if you've unpacked the Perl mongo driver as a subdir of here
 use MongoDB::_Protocol;
 use MongoDB::_Link;
 use MongoDB::Error;
+use MongoE::WireProtocol;
 ##
 
 my $proxy; # Holds global proxy state
