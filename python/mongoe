@@ -224,7 +224,37 @@ def build_filtered_schemalist(listreq, pool):
 	# Reach out to backend databases, build data structure with info on schemas
 	# that exist on them that we can reach w/ our current config, suitable for building
 	# a response to the listDatabases command
-	pass
+	routes = get_router_iterable()
+	filtered_schemot = {}
+	latemessage = {}
+	for host in routes:
+		for port in routes[host]:
+			sys.stderr.print("b_f_s: host [" + host + "] port [" + port + "]\n")
+			reg_schemot = routes[host][port]
+			conn = ensure_mongo_connection(pool, host, port)
+			conn.write(listreq)
+			if conn.remote_connected():
+				sys.stderr.print("Warning: mongod for host [" + host + "]:[" + port + "] has disconnected\n") # Rework to the Python3 syntax
+			resp = conn.read()
+			resp_decoded = parse_reply(resp)
+			sch_info = extract_schema_info_from_response(resp_decoded)
+			sys.stderr.print(info_message(resp_decoded))
+			for schema in reg_schemot:
+				if schema in sch_info:
+					filtered_schemot[schema] = sch_info[schema]
+				if '_DEFAULT' in reg_schemot:
+					# A mongo ordinarily exposes all schemot that it explicitly is specified to
+					# serve, and no other schemot. A mongo which is listed as _DEFAULT will still
+					# do that, but it will also (with lower priority) expose the rest of its schemot
+					# to a "show dbs". Doing that "lower priority" thing requires us to do this
+					# "late massage" logic. Note: This is a policy choice; we could refuse to service
+					# requests to schemot (or list them) that we don't know about, but that'd make
+					# mongoe much less transparent.
+					latemassage = sch_info # Stash
+	for softschema in latemassage.keys():
+		if not softschema in filtered_schemot:
+			filtered_schemot[softschema] = latemassage[softschema]
+	return filtered_schemot
 
 def cmd_forbidden(cmd):
 	forbidden = 	{
@@ -271,6 +301,22 @@ def cmd_forbidden(cmd):
 
 def bson_i_refuse(reqid):
 	# Generate an OP_REPLY with a payload amounting to refusing an operation
+	payload = BSON.encode({'$err' : 'Forbidden'})
+	respflags = int('00010',2) # XXX Verify this is right
+	mlength = len(payload) + 36 # 28 from int32 + 8 from int64
+	ret = pack('lllllqll',				# Header
+		mlength,				# Int32
+		random.randrange(0, 2**31 - 1),		# ID
+		reqid,					# What we're replying to
+		1,					# OP_REPLY
+							# --- Begin Body ---
+		respflags,				# Int32, bit 1 high
+		0,					# CursorID
+		0,					# int32 startingFrom
+		1) + payload				# int32 numReturned, then a payload
+	return ret
+
+def generate_protocol_response(reqid, feature):
 	pass
 
 def bson_response_listDatabases(reqid,dbinfo):
