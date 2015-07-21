@@ -36,7 +36,7 @@ def cleaner(toclean):
 def setup_proxy(cfgspec):
 	# Read the proxy config string, setup the global proxy state
 	# returns associative array for what schema maps to where
-	(mode, args) = string.split(cfgspec, ':', 2)
+	(mode, args) = string.split(cfgspec, ':', 1)
 	if(mode == 'file'):
 		ret = load_proxyinfo_from_file(args)
 	else:
@@ -55,7 +55,7 @@ def load_proxyinfo_from_file(fn):
 		line = re.sub('\s+$', '', line)
 		if(re.match('^$', line)):
 			continue # Skip blank lines
-		(schema, host, port) = string.split(line, ':', 3)
+		(schema, host, port) = string.split(line, ':', 2)
 		ret = {}
 		ret[schema] = {}
 		ret[schema]['host'] = host
@@ -157,18 +157,44 @@ def read_message(fh):
 
 def parse_op(opcode, request, opinfo):
 	# Pass in: (non-decoded) opcode, request
-	# Returns: opname, schema, table
+	# Returns: (updates opinfo in-place)
+	#
+	# XXX May need to rewrite all this with splits rather than offsets
 	opinfo = {}
 	opcode_d = unpack('l', opcode)
 	if opcode_d == 2001: # OP_UPDATE
 		selectordoc = request[calcsize('l')+9+len(request):] # 9 = 2L + strlen + null term
-		(schema, table) = request[calcsize('l'):].split('.', 2)
+		(schema, table) = request[calcsize('l'):].split('.', 1)
 		opinfo['opname'], opinfo['schema'], opinfo['table'] = 'OP_UPDATE', schema, table
 	elif opcode_d == 2002: # OP_INSERT
 		qdoc = request[calcsize('l')+5+len(request):] # 5 = 1L + strlen + null-termination
-		# TODO Python's map/lambda stuff is too different - rethink this
-	
-	pass
+		dec_docset = map(lambda docarray: BSON.decode(docarray), qdoc)
+		(schema, table) = coll.split('.', 1)
+		opinfo['opname'], opinfo['schema'], opinfo['table'], opinfo['bson'] = 'OP_UPDATE', schema, table, dec_docset
+	elif opcode_d == 2004: # OP_QUERY
+		qdoc = request[calcsize('l')+13+len(request):] # 13 = 3L + strlen + null-termination
+		dec_docset = map(lambda docarray: BSON.decode(docarray), qdoc)
+		(schema, table) = coll.split('.', 1)
+		opinfo['opname'], opinfo['schema'], opinfo['table'], opinfo['bson'] = 'OP_QUERY', schema, table, dec_docset
+	elif opcode_d == 2005: # OP_GET_MORE
+		post_l = request[calcsize('l'):] # Seek past a l
+		(coll,_) = post_l.split('\x00', 1) # And save the stuff before the null
+		(schema, table) = coll.split('.', 1)
+		opinfo['opname'], opinfo['schema'], opinfo['table'] = 'OP_GET_MORE', schema, table
+	elif opcode_d == 2006: # OP_DELETE
+		qdoc = request[calcsize('l')+9+len(request):] # 9 = 2L + strlen + null-termination
+		dec_docset = map(lambda docarray: BSON.decode(docarray), qdoc)
+		(schema, table) = coll.split('.', 1)
+		opinfo['opname'], opinfo['schema'], opinfo['table'], opinfo['bson'] = 'OP_QUERY', schema, table, dec_docset
+	elif opcode_d == 2007: # OP_KILL_CURSORS
+		opinfo['opname'] = 'OP_KILL_CURSORS'
+	elif opcode_d == 1: # OP_REPLY
+		(_, cursorid, startfrom, numret) = unpack('lqll', request)
+		qdoc = request[20:] # 5L = lqll
+		dec_docset = map(lambda docarray: BSON.decode(docarray), qdoc)
+		opinfo['opname'], opinfo['bson'] = 'OP_REPLY', dec_docset
+	else:
+		opinfo['opname'] = 'OP_UNKNOWN'
 
 def command_admin(req):
 	# True if this is a request to the admin schema, else False
@@ -177,12 +203,22 @@ def command_admin(req):
 	return 0
 
 def extract_admin_cmd(req):
-	pass
+	bsonlist = req['bson']
+	hr = bsonlist[0]
+	return hr.keys()[0]
 
 def extract_schema_info_from_response(req):
 	# Return an a-a with schema names as key, value is something
 	# extract_schema_info_from_response() can use
-	pass
+	ret = {}
+	bsonlist = req['bson']
+	rep = bsonlist[0]
+	dbs = rep['databases']
+	for db in dbs:
+		ret[db['name']]['sizeOnDisk'] = db['sizeOnDisk']
+		ret[db['name']]['empty'] = db['empty']
+		ret[db['name']]['name'] = db['name']
+	return ret
 
 def build_filtered_schemalist(listreq, pool):
 	# Reach out to backend databases, build data structure with info on schemas
