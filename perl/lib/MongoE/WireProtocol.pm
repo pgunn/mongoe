@@ -19,6 +19,12 @@ our @EXPORT_OK = qw(
 			); # Functions exposed to clients
 our @EXPORT = @EXPORT_OK;
 
+##########################
+# Note: No functions in this library should read or write to the network,
+#	meaning they should not touch STDIN or STDOUT
+#	If you're adding anything in here that would do I/O (apart from STDERR),
+#	pass it in or return it back.
+
 =pod
 
 =head1 NAME

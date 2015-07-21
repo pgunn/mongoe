@@ -17,13 +17,13 @@ use MongoDB::_Link;
 use MongoDB::Error;
 ##
 
-my $proxy; # Holds global proxy state
 
 ##
 # Plumbing for Net::Server, which manages connections
 # so I just write a handler for incoming clients
 package MongoProxy;
 use MongoE::WireProtocol;
+use MongoE::ERouter;
 use base qw(Net::Server);
 use Data::Dumper;
 $Data::Dumper::Indent=3;
@@ -149,78 +149,6 @@ $toclean =~ s/[^[:ascii:]]/\?/g;
 $toclean =~ s/[^[:print:]]/\?/g;
 $toclean =~ tr/\n\f\r/\?/d;
 return $toclean;
-}
-
-##################
-# Router
-
-sub setup_proxy($)
-{	# Read the proxy config string, setup the global proxy state
-	# (hashref) for what schema maps to where
-my ($cfg) = @_;
-my %ret;
-
-my ($mode, $args) = split(':', $cfg, 2);
-if($mode eq 'file')
-	{%ret = load_proxyinfo_from_file($args);}
-else	{die "Unsupported proxy method [$mode]\n";}
-
-return \%ret;
-}
-
-sub load_proxyinfo_from_file($)
-{	# Load a colon-separated file that maps:
-	# SCHEMA:HOST:PORT
-my ($fn) = @_;
-my %ret;
-open(my $fh, $fn) || die "Could not open proxy descriptor file [$fn]:$!\n";
-while(<$fh>)
-	{
-	tr/\n\r\f//d; # Remove newlines and stuff
-	s/#.*//; # Strip comments
-	s/^\s+//;
-	s/\s+$//;
-	next if(/^$/); # Skip blank lines
-	my($schema, $host, $port) = split(':', $_);
-	$ret{$schema}{host} = $host;
-	$ret{$schema}{port} = $port;
-	#print "Learned schema [$schema]\n";
-	}
-close($fh);
-if(! defined($ret{_DEFAULT}))
-	{die "You must define a _DEFAULT schema\n";}
-
-return %ret;
-}
-
-sub route_for_destination($)
-{	# Given a schema, return the (host,port) pair it maps to
-my ($schema) = @_;
-
-my ($host, $port); # Return this
-if(! defined($$proxy{$schema}))
-	{$schema = "_DEFAULT";} # We should always have entries for this
-
-$host = $$proxy{$schema}{host};
-$port = $$proxy{$schema}{port};
-return ($host, $port);
-}
-
-sub get_router_iterable
-{	# Packages the entire routing config up into a single data structure
-	# for something to walk it efficiently by endpoint rather than by schema served.
-	# Returns a multidimensional hash with ip and port as the 2 keys, and the value
-	# being a reference to a list of the schemas served by the endpoint. 
-	# TODO: Evaluate Key-value with URL as key, value still as listref or maybe CSV
-my %ret;
-my @schemot = keys %$proxy;
-foreach my $schema (@schemot)
-	{
-	my $host = $$proxy{$schema}{host};
-	my $port = $$proxy{$schema}{port};
-	push(@{$ret{$host}{$port}}, $schema);
-	}
-return %ret;
 }
 
 ##################
@@ -456,7 +384,7 @@ return $$pool{"$host$port"};
 sub main
 {	# When you use Net::Server, your main function is primarily
 	# to prepare you to enter the event loop the module provides
-$proxy = setup_proxy($proxycfg);
+setup_proxy($proxycfg);
 MongoProxy->run(port => $proxy_lport);
 }
 
