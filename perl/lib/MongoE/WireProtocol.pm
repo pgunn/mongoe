@@ -40,11 +40,20 @@ B<read_message(FILEHANDLE)>
 Read a single message from the fh representing the network socket.
 Return a hash with the information needed in there. The hash has the
 following keys:
-	msglen_decoded
-	reqid_decoded
-	respto_decoded
-	opcode_decoded
-	raw - binary data from the request
+
+=over
+
+=item msglen_decoded
+
+=item d_decoded
+
+=item respto_decoded
+
+=item opcode_decoded
+
+=item raw - binary data from the request
+
+=back
 
 =cut
 
@@ -77,13 +86,22 @@ return %ret;
 
 B<parse_op(OPCODE, REQUEST, OPINFO)>
 
-Given a (still binary) opcode, the full binary request, and a ref an opinfo hash:
-Analyse the content of the operation, taking notes in-place in opinfo. Opinfo gains
+Given a (still binary) opcode, the full binary request, and a ref to an opinfo hash,
+analyse the content of the operation, taking notes in-place in opinfo. Opinfo gains
 some of the following fields:
-	opname
-	schema
-	table
-	bson
+
+=over
+
+=item	opname
+
+=item	schema
+
+=item	table
+
+=item	bson
+
+=back
+
 The number of fields depends on the operation.
 
 =cut
