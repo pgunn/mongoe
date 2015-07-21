@@ -628,6 +628,11 @@ return $size;
 sub ensure_mongo_connection
 {	# Make sure there's a connection to this server.
 	# Return that connection.
+	# TODO: Modify this to collect/stash information about the target system:
+	#	What version of the Wire Protocol does it claim to speak?
+	#	What version of MongoDB(?) is it? Or might it be ToroDB or sth else?
+	#	Is it really another mognoe?
+	#	If it is, what features has it enabled for this communication?
 my ($pool, $host, $port) = @_;
 
 if(! defined($$pool{"$host$port"})) # TODO OR if the connection is no longer up....
