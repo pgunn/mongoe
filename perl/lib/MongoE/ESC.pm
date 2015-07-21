@@ -17,6 +17,8 @@ our @EXPORT_OK = qw(
 			); # Functions exposed to clients
 our @EXPORT = @EXPORT_OK;
 
+our %ESRegistry; # Package-Global, stores shapes
+
 ##########################
 # Note: No functions in this library should read or write to the network,
 #	meaning they should not touch STDIN or STDOUT
@@ -51,6 +53,7 @@ sub esc_registry_init($)
 {
 my ($dest) = @_;
 
+$ESRegistry{$dest} = \();
 }
 
 =pod
@@ -117,6 +120,98 @@ sub esc_loosepackify
 {
 my ($densedoc, $src) = @_;
 
+}
+
+#########################
+# Private methods
+
+sub doc_split($)
+{	# Given a document, return two things:
+	# first: a (binary) string composed of the shape parts of the document sans values
+	# second: a (binary) string composed of the value parts of the documents sans shape
+	# Neither of these have separators beyond those of their type.
+	#
+	# DO NOT PASS multiple docs to this. Split them first.
+my ($indoc) = @_;
+my $docshape;
+my $rawdense; # Like a dense doc (spec calls it esdoc), but without the header or the null terminator
+open(my $doc, "<", \$indoc) || die "Failed to open doc for shape split\n";
+undef = altread($doc, 4); # Number of bytes. We don't care.
+while(my $val = altread($doc, 1))
+	{ # Each loop is responsible for advancing the reads up to the next element
+	if($val == hex('0x01') ) # Double
+		{
+		}
+	elsif($val == hex('0x02') ) # String
+		{
+		}
+	elsif($val == hex('0x03') ) # Embedded document
+		{
+		}
+	elsif($val == hex('0x04') ) # Array
+		{
+		}
+	elsif($val == hex('0x05') ) # Binary
+		{
+		}
+	elsif($val == hex('0x06') ) # Undef (no payload)
+		{
+		}
+	elsif($val == hex('0x07') ) # ObjectId
+		{
+		}
+	elsif($val == hex('0x08') ) # Boolean
+		{
+		}
+	elsif($val == hex('0x09') ) # DateTime
+		{
+		}
+	elsif($val == hex('0x0A') ) # Null
+		{
+		}
+	elsif($val == hex('0x0B') ) # Regex
+		{
+		}
+	elsif($val == hex('0x0C') ) # DBPointer
+		{
+		}
+	elsif($val == hex('0x0D') ) # Javascript
+		{
+		}
+	elsif($val == hex('0x0E') ) # (obsolete)
+		{
+		}
+	elsif($val == hex('0x0F') ) # Javascript
+		{
+		}
+	elsif($val == hex('0x10') ) # int32
+		{
+		}
+	elsif($val == hex('0x11') ) # Timestamp
+		{
+		}
+	elsif($val == hex('0x12') ) # int64
+		{
+		}
+	elsif($val == hex('0xFF') ) # Minkey
+		{
+		}
+	elsif($val == hex('0x7F') ) # Maxkey
+		{
+		}
+	}
+close($doc);
+
+}
+
+sub altread($$)
+{
+my ($fh, $len) = @_;
+my $val;
+my $retcode = read($fh, $val, $len);
+if( (! defined $retcode) || ($retcode < $len))
+	{return undef;} # We don't care about the distinction here. If it happens we probably will bail
+return $val;
 }
 
 1;
