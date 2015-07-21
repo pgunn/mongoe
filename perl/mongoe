@@ -84,8 +84,16 @@ while(! eof($client))
 				# TODO Refactor this
 			my %master_schemot = build_filtered_schemalist($req{raw}, $pool);
 			my $cli_resp = bson_response_listDatabases($req{reqid_decoded}, %master_schemot);
-			# TODO Decode and print too
+			my %respinfo = parse_reply($cli_resp);
+			print STDERR info_message(%respinfo);
 			print $cli_resp;
+			}
+		elsif($cmd eq 'buildinfo')
+			{ # FIXME Two routes to this code path, we NEED to unify this somehow
+			my $version_signature = generate_version_response($req{reqid_decoded});
+			my %respinfo = parse_reply($version_signature);
+			print STDERR info_message(%respinfo);
+			print $version_signature;
 			}
 		else # For now passthrough anything not forbidden
 			{
@@ -108,8 +116,14 @@ while(! eof($client))
 			my $proto_signature = generate_protocol_response($req{reqid_decoded}, \@mockup_features); # FIXME Eventually this should negotiate features on a per-schema basis
 			my %respinfo = parse_reply($proto_signature);
 			print STDERR info_message(%respinfo);
-			# FIXME Should we decode and display this too?
 			print $proto_signature;
+			}
+		elsif(request_queries_version(\%req)) # If we do too much of this we need a more general/performant approach
+			{
+			my $version_signature = generate_version_response($req{reqid_decoded});
+			my %respinfo = parse_reply($version_signature);
+			print STDERR info_message(%respinfo);
+			print $version_signature;
 			}
 		else
 			{
@@ -517,6 +531,26 @@ if(defined($$req_r{table}) && ($$req_r{table} eq '$cmd'))
 return 0;
 }
 
+sub request_queries_version
+{
+my ($req_r) = @_;
+if(defined($$req_r{table}) && ($$req_r{table} eq '$cmd'))
+	{
+	my @bsonlist = @{$$req_r{bson}};
+	if(@bsonlist != 1)
+		{return 0;}
+
+	my $query = $bsonlist[0];
+	if(keys %$query < 1)
+		{return 0;}
+	if(defined($$query{buildinfo}) && ($$query{buildinfo}==1))
+		{
+		return 1;
+		#print STDERR "rnp_dump data dump: " . Dumper($query) . "\n";
+		}
+	}
+return 0;
+}
 
 
 ##################
@@ -582,9 +616,44 @@ my $ret = pack('lllllqll', 		# Header:
 .		$payload;
 
 return $ret;
-
 }
 
+sub generate_version_response
+{
+my ($reqid, $feature_r) = @_;
+
+my $bson_true = BSON::Bool->true;
+my $bson_false = BSON::Bool->false;
+my $bson_now = BSON::Time->new;
+my @versionarray = [3,0,99];
+my $payload = BSON::encode(	{
+				'version' => "3.0.99",
+				'sysInfo' => 'sn5176 sn5176 9.0.2.2 sin.0 CRAY Y-MP',
+				'loaderFlags' => 'use strict',
+				'compilerFlags' => '-w',
+				'versionArray' => \@versionarray,
+				'javascriptEngine' => 'V8',
+				'bits' => 64,
+				'debug' => $bson_false,
+				'maxBsonObjectSize' => 16777216,
+				'ok' => 1
+				});
+my $mlength = length($payload) + 36; # 28 from the int32, 8 from the int64
+
+my $ret = pack('lllllqll', 		# Header:
+		$mlength,			# int32 requestID
+		int( rand( 2**31 - 1 ) ),	# int32 requestID FIXME comment incorrect
+		$reqid,				# int32 "what we're replying to"
+		1,				# OP_REPLY
+						# --- Begin Body ---
+		0,				# int32 responseFlags, all bits low
+		0,				# int64 CursorID
+		0,				# int32 startingFrom
+		1)				# int32 numReturned
+.		$payload;
+
+return $ret;
+}
 
 sub bson_response_listDatabases
 {	# Generate an OP_REPLY with a payload that's a valid response to listDatabases
