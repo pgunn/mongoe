@@ -60,3 +60,20 @@ data operations. It has the same sematics as OP_INSERT_Q (including expected res
 the server must extract the shape and not perform any DML.
 
 There is no provision for mixing esdocs and documents in the same insert operation. Don't do that.
+
+-------------------------
+Packing notes for esshapes and esdocuments:
+*esshapes can have sub-esshapes. The deep shape of a document is represented by a shapeid,
+	so two documents that are superficially the same but which have different subdocs
+	will not share a shapeid. esshapes are serialised deep shape information.
+*The subdocument used for BSON type 0x0D (Javascript) is not considered document shape info from
+	ESC's perspective, and is stuffed into an esdocument as a BSON document.
+*The string in BSON type 0x0C (DBPointer) is pushed into the esdocument
+*Length and type information in BSON type 0x05 (Binary) is considered value-ish rather than shape-ish,
+	and is pressed into the esdocument. Thus two otherwise-identically-shaped documents that have
+	type or length information that differ in a BSON field will share the same shapeid.
+*BSON strings (not cstrings), because they include recorded length information, have their null
+	terminator stripped in esdocuments. The length information is NOT adjusted downwards from this
+	stripping.
+
+
