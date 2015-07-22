@@ -59,4 +59,4 @@ The OP_QSHAPE (op query shape) is intended to populate a cache without otherwise
 data operations. It has the same sematics as OP_INSERT_Q (including expected response), but
 the server must extract the shape and not perform any DML.
 
-There is no provision for mixing esdocs and documents in the same insert operation. 
+There is no provision for mixing esdocs and documents in the same insert operation. Don't do that.
