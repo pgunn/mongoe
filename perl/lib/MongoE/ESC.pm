@@ -124,7 +124,7 @@ my ($densedoc, $src) = @_;
 
 #########################
 # Private methods
-
+sub doc_split($); # Prototype for recursive functions
 sub doc_split($)
 {	# Given a document, return two things:
 	# first: a (binary) string composed of the shape parts of the document sans values
@@ -132,76 +132,156 @@ sub doc_split($)
 	# Neither of these have separators beyond those of their type.
 	#
 	# DO NOT PASS multiple docs to this. Split them first.
+	#
+	# The binary shape representation includes a document length, corrected for
+	# the document size without payloads
 my ($indoc) = @_;
-my $docshape;
-my $rawdense; # Like a dense doc (spec calls it esdoc), but without the header or the null terminator
+# XXX Should docshape and rawdense be strings or arrays?
+my $docshape; # Header (prepended later), shapes only. Deep (contains subdoc shapes)
+my $rawdense; # Packed values
 open(my $doc, "<", \$indoc) || die "Failed to open doc for shape split\n";
-undef = altread($doc, 4); # Number of bytes. We don't care.
+undef = altread($doc, 4); # Number of bytes. We don't care - we recalculate this
 while(my $val = altread($doc, 1))
 	{ # Each loop is responsible for advancing the reads up to the next element
+	local $/ = "\0";	# Set line-terminator to null values so any call to readline will
+				# read a string
 	if($val == hex('0x01') ) # Double
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $fieldval = altread($doc, 8); # defined as 8 bytes
+		$docshape .= $val . $fieldname;
+		$rawdense .= $fieldval;
 		}
 	elsif($val == hex('0x02') ) # String
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $fieldval = read_bson_stringtype($doc);
+		$docshape .= $val . $fieldname;
+		$rawdense .= $fieldval;
 		}
-	elsif($val == hex('0x03') ) # Embedded document
+	elsif( ($val == hex('0x03')) || ($val == hex('0x04')) ) # Embedded document or array
 		{
-		}
-	elsif($val == hex('0x04') ) # Array
-		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $subdoc_len = altread($doc, 4);
+		my $subdoc_len_decoded = unpack('V', $subdoc_len);
+		my $subdoc_chopt = altread($doc, $subdoc_len_decoded);
+		my $fieldblob = $subdoc_len . $subdoc_chopt; # Unchop it!
+		my ($subshape, $subval) = doc_split($fieldblob);
+		$docshape .= $val . $fieldname . $subshape;
+		$rawdense .= $subval;
 		}
 	elsif($val == hex('0x05') ) # Binary
-		{
+		{		# XXX Design decision here:
+				# A docshape does not include the length or type of binary data fields; that's part of
+				# the packed-values
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $fieldlen = altread($doc, 4);
+		my $fieldsubt= altread($doc, 1);
+		my $fieldlen_decoded = unpack('V', $fieldlen); # XXX Is this the right unpack string?
+		my $fieldsubv= altread($doc, $fieldlen_decoded);
+		$docshape .= $val . $fieldname;
+		$rawdense .= $fieldlen . $fieldsubt . $fieldsubv;
 		}
 	elsif($val == hex('0x06') ) # Undef (no payload)
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		$docshape .= $val . $fieldname;
 		}
 	elsif($val == hex('0x07') ) # ObjectId
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $fieldval = altread($doc, 12);
+		$docshape .= $val . $fieldname;
+		$rawdense .= $fieldval;
 		}
 	elsif($val == hex('0x08') ) # Boolean
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $fieldval = altread($doc, 1);
+		$docshape .= $val . $fieldname;
+		$rawdense .= $fieldval;
 		}
 	elsif($val == hex('0x09') ) # DateTime
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $fieldval = altread($doc, 8);
+		$docshape .= $val . $fieldname;
+		$rawdense .= $fieldval;
 		}
 	elsif($val == hex('0x0A') ) # Null
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		$docshape .= $val . $fieldname;
 		}
 	elsif($val == hex('0x0B') ) # Regex
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $fieldvala = readline($doc);
+		my $fieldvalb = readline($doc);
+		$docshape .= $val . $fieldname;
+		$rawdense .= $fieldvala . $fieldvalb;
 		}
 	elsif($val == hex('0x0C') ) # DBPointer
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $dbpstring = read_bson_stringtype($doc); # FIXME Not sure what this is. Does it belong to docshape or rawdense?
+		my $fieldval = altread($doc, 12); # defined as 8 bytes
+		$docshape .= $val . $fieldname;
+		$rawdense .= $dbpstring . $fieldval; # Guessing dbpstring is a database name?
 		}
 	elsif($val == hex('0x0D') ) # Javascript
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $fieldval = read_bson_stringtype($doc);
+		$docshape .= $val . $fieldname;
+		$rawdense .= $fieldval;
 		}
 	elsif($val == hex('0x0E') ) # (obsolete)
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $fieldval = read_bson_stringtype($doc);
+		$docshape .= $val . $fieldname;
+		$rawdense .= $fieldval;
 		}
 	elsif($val == hex('0x0F') ) # Javascript
 		{
+		# TODO Madness...
 		}
 	elsif($val == hex('0x10') ) # int32
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $fieldval = altread($doc, 4);
+		$docshape .= $val . $fieldname;
+		$rawdense .= $fieldval;
 		}
 	elsif($val == hex('0x11') ) # Timestamp
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $fieldval = altread($doc, 8);
+		$docshape .= $val . $fieldname;
+		$rawdense .= $fieldval;
 		}
 	elsif($val == hex('0x12') ) # int64
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my $fieldval = altread($doc, 8);
+		$docshape .= $val . $fieldname;
+		$rawdense .= $fieldval;
 		}
 	elsif($val == hex('0xFF') ) # Minkey
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		$docshape .= $val . $fieldname;
 		}
 	elsif($val == hex('0x7F') ) # Maxkey
 		{
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		$docshape .= $val . $fieldname;
 		}
 	}
 close($doc);
-
+# XXX Insert code to fix the shape, then pass things back
+# Note that this may need refactoring to be called recursively? To handle subdocuments
 }
 
 sub altread($$)
@@ -212,6 +292,20 @@ my $retcode = read($fh, $val, $len);
 if( (! defined $retcode) || ($retcode < $len))
 	{return undef;} # We don't care about the distinction here. If it happens we probably will bail
 return $val;
+}
+
+sub read_bson_stringtype($)
+{	# Read one of the bson managed string types.
+	# Know: DISCARDS THE NULL, does NOT adjust length
+	# Know: NOT the same as the cstring tyle in the spec
+my ($fh) = @_;
+my $readlen = altread($fh, 4);
+my $readlen_decoded = unpack('V', $readlen);
+my $readval = altread($fh, $readlen_decoded - 1);
+my $should_be_null = altread($fh, 1);
+if($should_be_null != "\0")
+	{die "Error in unpacking BSON string: no null where expected\n";}
+return $readlen_decoded . $readval;
 }
 
 1;
