@@ -136,9 +136,10 @@ sub doc_split($)
 	# The binary shape representation includes a document length, corrected for
 	# the document size without payloads
 my ($indoc) = @_;
+use bytes; # Turn unicode off for this show
 # XXX Should docshape and rawdense be strings or arrays?
-my $docshape; # Header (prepended later), shapes only. Deep (contains subdoc shapes)
-my $rawdense; # Packed values
+my $docshape = ''; # Header (prepended later), shapes only. Deep (contains subdoc shapes)
+my $rawdense = ''; # Packed values
 open(my $doc, "<", \$indoc) || die "Failed to open doc for shape split\n";
 undef = altread($doc, 4); # Number of bytes. We don't care - we recalculate this
 while(my $val = altread($doc, 1))
@@ -280,8 +281,11 @@ while(my $val = altread($doc, 1))
 		}
 	}
 close($doc);
-# XXX Insert code to fix the shape, then pass things back
-# Note that this may need refactoring to be called recursively? To handle subdocuments
+
+my $shapelen = length($docshape) + 4; # The 4 is to leave room for the shape descriptor we're about to insert
+					# The "use bytes" above ensures unicode doesn't confuse things
+my $shapelen_packed = pack('V', $shapelen);
+return $shapelen_packed . $docshape, $rawdense;
 }
 
 sub altread($$)
