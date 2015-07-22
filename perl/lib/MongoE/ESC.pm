@@ -245,8 +245,19 @@ while(my $val = altread($doc, 1))
 		$rawdense .= $fieldval;
 		}
 	elsif($val == hex('0x0F') ) # Javascript
-		{
-		# TODO Madness...
+		{	# XXX Design choice here:
+			# the subdocument that maps field scope here is not shape-ish; it's more value-ish and
+			# its internal shape is minimal and variable. I'm passing it unaltered into rawdense.
+			# I don't think there's a case to be made for going the other way.
+		my $fieldname = readline($doc); # Includes the trailing null, useful for re-packing but be careful
+		my undef = altread($doc, 4); # XXX We could do a sanity check here instead
+		my $cws_string = read_bson_stringtype($doc); # XXX XXX This subdoc is not shape-ish and should go into rawdense
+		my $subdoc_len = altread($doc, 4);
+		my $subdoc_len_decoded = unpack('V', $subdoc_len);
+		my $subdoc_chopt = altread($doc, $subdoc_len_decoded);
+		my $jsmap = $subdoc_len . $subdoc_chopt; # Unchop it!
+		$docshape .= $val . $fieldname;
+		$rawdense .= $subval . $jsmap;
 		}
 	elsif($val == hex('0x10') ) # int32
 		{
